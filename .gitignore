@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.docker
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Media uploads (user generated)
+media/*
+!media/.gitkeep
+
+# AI Models (large binary files - never in git)
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.bin
+*.onnx
+ai_models/
+backend/ai_models/
+backend/models/
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Temp/test files
+backend/result_images/
+backend/output/
+backend/temp_ms_restore/
+backend/video/
+backend/dummy/
+pip_*.txt
+sabrina.jpg
+.agent/
+
+# Test/demo media files (root)
+test foto.jpg
+test foto2.jpg.jpeg
+test restore foto.jpg
+test restore foto2.jpg
+test restore foto3.jpg
+test restore foto4.jpg
+test33.jpg
+images.webp
+test video.mp4
+test_video_colored.mp4
+colorizetestfoto.jpg
+colorizetestvideo.mp4
+restoretestfoto.jpg
+*testfoto*
+*testvideo*
+
+# Log files
+backend_log.txt
+backend.log
+backend_err.log
+frontend/frontend.log
+
+# Frontend build artifacts
+frontend/dist/
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+.coverage

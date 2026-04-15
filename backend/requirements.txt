@@ -1,0 +1,32 @@
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+aiosqlite
+python-dotenv
+celery
+redis
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+pydantic-settings
+requests
+pillow
+psutil
+websockets
+# AI Dependencies
+torch
+torchvision
+fastai
+deoldify
+stripe
+# Face Restoration
+codeformer-pip
+opencv-python
+basicsr
+facexlib
+# Advanced Restoration (install separately if needed)
+realesrgan
+gfpgan
+scikit-image
+scipy
