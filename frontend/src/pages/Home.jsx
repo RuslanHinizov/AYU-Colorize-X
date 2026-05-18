@@ -48,10 +48,10 @@ export default function Home() {
             color: 'secondary',
         },
         {
-            title: t('home.restorationCardTitle'),
-            description: t('home.restorationCardDesc'),
+            title: 'AI Enhance',
+            description: t('home.enhanceCardDesc'),
             icon: Wand2,
-            path: '/restore',
+            path: '/enhance',
             color: 'accent',
         },
     ];

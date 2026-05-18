@@ -1,15 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
+from sqlalchemy.orm import aliased
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from database import get_db
 from models import User, Job, UserRole, JobStatus, AuditLog
 from routers.auth import get_current_user
 from services import get_password_hash
-import torch
+from services.system_settings import get_system_settings, set_system_settings
 import time
 from datetime import datetime, timedelta
+from models.utils import _utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -111,7 +113,7 @@ async def get_chart_data(
     db: AsyncSession = Depends(get_db)
 ):
     """Get 7-day chart data for dashboard"""
-    now = datetime.utcnow()
+    now = _utcnow()
     seven_days_ago = now - timedelta(days=7)
 
     # Jobs per day (last 7 days)
@@ -171,38 +173,30 @@ async def list_all_users(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all users with detailed statistics"""
+    """List all users with detailed statistics (single aggregated query — no N+1)"""
+    # Fetch all user stats in a single aggregated JOIN query
+    stats_query = (
+        select(
+            Job.user_id,
+            func.count(Job.id).label("total_jobs"),
+            func.count(case((Job.status == JobStatus.COMPLETED, 1))).label("completed_jobs"),
+            func.sum(
+                case((Job.processing_time.isnot(None), Job.processing_time), else_=0)
+            ).label("total_processing_time"),
+            func.max(Job.created_at).label("last_activity"),
+        )
+        .group_by(Job.user_id)
+    )
+    stats_result = await db.execute(stats_query)
+    stats_map = {row.user_id: row for row in stats_result.fetchall()}
+
     result = await db.execute(select(User).order_by(User.created_at.desc()))
     users = result.scalars().all()
 
     user_list = []
     for user in users:
-        total_jobs_result = await db.execute(
-            select(func.count(Job.id)).where(Job.user_id == user.id)
-        )
-        total_jobs = total_jobs_result.scalar() or 0
-
-        completed_jobs_result = await db.execute(
-            select(func.count(Job.id)).where(
-                Job.user_id == user.id,
-                Job.status == JobStatus.COMPLETED
-            )
-        )
-        completed_jobs = completed_jobs_result.scalar() or 0
-
-        processing_time_result = await db.execute(
-            select(func.sum(Job.processing_time)).where(
-                Job.user_id == user.id,
-                Job.processing_time.isnot(None)
-            )
-        )
-        total_processing_time = processing_time_result.scalar() or 0
-
-        last_job_result = await db.execute(
-            select(Job.created_at).where(Job.user_id == user.id).order_by(Job.created_at.desc()).limit(1)
-        )
-        last_job = last_job_result.scalar_one_or_none()
-
+        stats = stats_map.get(user.id)
+        total_processing_time = float(stats.total_processing_time or 0) if stats else 0
         user_list.append({
             "id": str(user.id),
             "email": user.email,
@@ -211,11 +205,11 @@ async def list_all_users(
             "is_active": user.is_active,
             "created_at": user.created_at.isoformat(),
             "email_notifications": getattr(user, 'email_notifications', True),
-            "has_api_key": bool(getattr(user, 'api_key', None)),
-            "total_jobs": total_jobs,
-            "completed_jobs": completed_jobs,
-            "total_processing_time": round(total_processing_time, 2) if total_processing_time else 0,
-            "last_activity": last_job.isoformat() if last_job else None
+            "has_api_key": bool(getattr(user, 'api_key_hash', None) or getattr(user, 'api_key', None)),
+            "total_jobs": int(stats.total_jobs) if stats else 0,
+            "completed_jobs": int(stats.completed_jobs) if stats else 0,
+            "total_processing_time": round(total_processing_time, 2),
+            "last_activity": stats.last_activity.isoformat() if stats and stats.last_activity else None,
         })
 
     return user_list
@@ -234,8 +228,8 @@ async def create_user(
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta zaten kayıtlı")
 
-    if len(user_data.password) < 6:
-        raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı")
+    if len(user_data.password) < 8:
+        raise HTTPException(status_code=400, detail="Şifre en az 8 karakter olmalı")
 
     new_user = User(
         email=user_data.email,
@@ -383,22 +377,26 @@ async def bulk_user_action(
 @router.get("/jobs")
 async def list_all_jobs(
     admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ):
-    """List all jobs with user email and extra details"""
-    result = await db.execute(select(Job).order_by(Job.created_at.desc()).limit(100))
-    jobs = result.scalars().all()
+    """List jobs with user email via JOIN — no N+1 queries. Supports pagination."""
+    UserAlias = aliased(User)
+    result = await db.execute(
+        select(Job, UserAlias.email.label("user_email"))
+        .outerjoin(UserAlias, Job.user_id == UserAlias.id)
+        .order_by(Job.created_at.desc())
+        .limit(max(1, min(limit, 500)))
+        .offset(max(0, offset))
+    )
+    rows = result.fetchall()
 
-    job_list = []
-    for job in jobs:
-        # Get user email
-        user_result = await db.execute(select(User.email).where(User.id == job.user_id))
-        user_email = user_result.scalar_one_or_none() or "Silinmiş"
-
-        job_list.append({
+    return [
+        {
             "id": str(job.id),
             "user_id": str(job.user_id),
-            "user_email": user_email,
+            "user_email": user_email or "Silinmiş",
             "type": job.type.value,
             "status": job.status.value,
             "progress": job.progress or 0,
@@ -406,12 +404,12 @@ async def list_all_jobs(
             "error_message": job.error_message,
             "input_path": job.input_path,
             "output_path": job.output_path,
-            "device": getattr(job, 'device', None),
-            "render_factor": getattr(job, 'render_factor', None),
-            "created_at": job.created_at.isoformat()
-        })
-
-    return job_list
+            "device": job.device,
+            "render_factor": job.render_factor,
+            "created_at": job.created_at.isoformat(),
+        }
+        for job, user_email in rows
+    ]
 
 
 @router.get("/jobs/{job_id}")
@@ -482,6 +480,7 @@ async def get_system_resources(
     admin: User = Depends(require_admin)
 ):
     """Get system resource usage"""
+    import torch
     import psutil
     import shutil
     from services.model_cache import model_cache
@@ -538,24 +537,18 @@ class SystemSettings(BaseModel):
     max_concurrent_jobs: int = 5
 
 
-from app_state import app_settings as _settings
-
-
 @router.get("/system/settings", response_model=SystemSettings)
 async def get_settings(
-    admin: User = Depends(require_admin)
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
 ):
-    return _settings
+    return await get_system_settings(db)
 
 
 @router.get("/system/public-settings")
-async def get_public_settings():
+async def get_public_settings(db: AsyncSession = Depends(get_db)):
     """Public endpoint - returns announcement and maintenance status for frontend"""
-    return {
-        "maintenance_mode": _settings["maintenance_mode"],
-        "announcement": _settings["announcement"],
-        "max_concurrent_jobs": _settings["max_concurrent_jobs"]
-    }
+    return await get_system_settings(db)
 
 
 @router.post("/system/settings")
@@ -564,13 +557,11 @@ async def update_settings(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    _settings["maintenance_mode"] = settings.maintenance_mode
-    _settings["announcement"] = settings.announcement
-    _settings["max_concurrent_jobs"] = settings.max_concurrent_jobs
+    updated_settings = await set_system_settings(settings.model_dump(), db)
 
     await log_admin_action(db, admin.email, "settings_updated", None, f"Bakım: {settings.maintenance_mode}")
 
-    return _settings
+    return updated_settings
 
 
 @router.post("/system/clear-model-cache")

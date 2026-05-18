@@ -3,6 +3,8 @@ import shutil
 from pathlib import Path
 from fastapi import UploadFile
 import uuid
+import cv2
+from PIL import Image, UnidentifiedImageError
 
 UPLOAD_DIR = Path("media/uploads")
 OUTPUT_DIR = Path("media/outputs")
@@ -11,8 +13,71 @@ OUTPUT_DIR = Path("media/outputs")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".mp4", ".avi", ".mov", ".mkv"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_IMAGE_PIXELS = 36_000_000
+MAX_VIDEO_DURATION_SECONDS = 180
+MAX_VIDEO_WIDTH = 1920
+MAX_VIDEO_HEIGHT = 1080
+MAX_VIDEO_FPS = 60
+
+
+def _is_image(file_ext: str) -> bool:
+    return file_ext in IMAGE_EXTENSIONS
+
+
+def _is_video(file_ext: str) -> bool:
+    return file_ext in VIDEO_EXTENSIONS
+
+
+def _validate_content_type(upload_file: UploadFile, file_ext: str) -> None:
+    content_type = (upload_file.content_type or "").lower()
+    if _is_image(file_ext) and content_type and not content_type.startswith("image/"):
+        raise ValueError("Uploaded file content type does not match an image")
+    if _is_video(file_ext) and content_type and not content_type.startswith("video/"):
+        # Some browsers use application/octet-stream for videos; allow that.
+        if content_type != "application/octet-stream":
+            raise ValueError("Uploaded file content type does not match a video")
+
+
+def _validate_image_file(file_path: Path) -> None:
+    try:
+        Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+        with Image.open(file_path) as img:
+            img.verify()
+        with Image.open(file_path) as img:
+            width, height = img.size
+            if width <= 0 or height <= 0:
+                raise ValueError("Invalid image dimensions")
+            if width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("Image resolution is too large")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Invalid or corrupted image file") from exc
+
+
+def _validate_video_file(file_path: Path) -> None:
+    cap = cv2.VideoCapture(str(file_path))
+    try:
+        if not cap.isOpened():
+            raise ValueError("Invalid or corrupted video file")
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+        frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        duration = frames / fps if fps > 0 else 0
+
+        if width <= 0 or height <= 0 or frames <= 0:
+            raise ValueError("Invalid video metadata")
+        if width > MAX_VIDEO_WIDTH or height > MAX_VIDEO_HEIGHT:
+            raise ValueError(f"Video resolution exceeds {MAX_VIDEO_WIDTH}x{MAX_VIDEO_HEIGHT}")
+        if fps > MAX_VIDEO_FPS:
+            raise ValueError(f"Video FPS exceeds {MAX_VIDEO_FPS}")
+        if duration > MAX_VIDEO_DURATION_SECONDS:
+            raise ValueError(f"Video duration exceeds {MAX_VIDEO_DURATION_SECONDS} seconds")
+    finally:
+        cap.release()
 
 async def save_upload_file(upload_file: UploadFile) -> str:
     """Save uploaded file and return the path"""
@@ -20,6 +85,8 @@ async def save_upload_file(upload_file: UploadFile) -> str:
     file_ext = Path(upload_file.filename).suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise ValueError(f"File type {file_ext} not allowed. Allowed types: {ALLOWED_EXTENSIONS}")
+
+    _validate_content_type(upload_file, file_ext)
 
     # Early size check via Content-Length header (if available)
     if upload_file.size and upload_file.size > MAX_FILE_SIZE:
@@ -40,6 +107,15 @@ async def save_upload_file(upload_file: UploadFile) -> str:
                 raise ValueError(f"File too large. Maximum allowed size is {MAX_FILE_SIZE // (1024*1024)}MB")
             buffer.write(chunk)
 
+    try:
+        if _is_image(file_ext):
+            _validate_image_file(file_path)
+        elif _is_video(file_ext):
+            _validate_video_file(file_path)
+    except Exception:
+        file_path.unlink(missing_ok=True)
+        raise
+
     return str(file_path)
 
 def _validate_path_within(file_path: Path, allowed_dir: Path) -> Path:
@@ -55,7 +131,8 @@ def get_output_path(input_path: str, job_type: str) -> str:
     input_file = Path(input_path)
     # Sanitize job_type to prevent path injection
     safe_job_type = "".join(c for c in job_type.lower() if c.isalnum() or c == '_')
-    output_filename = f"{input_file.stem}_{safe_job_type}{input_file.suffix}"
+    output_ext = ".mp4" if safe_job_type == "video_colorize" else ".jpg"
+    output_filename = f"{input_file.stem}_{safe_job_type}{output_ext}"
     output_path = OUTPUT_DIR / output_filename
     _validate_path_within(output_path, OUTPUT_DIR)
     return str(output_path)

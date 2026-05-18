@@ -23,11 +23,31 @@ PLAN_CREDITS = {
     "ENTERPRISE": 500,
 }
 
+
+def _stripe_mapping_to_dict(value) -> dict:
+    """Convert StripeObject/dict metadata to a plain dict."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    to_dict = getattr(value, "to_dict_recursive", None)
+    if callable(to_dict):
+        return to_dict()
+    try:
+        return dict(value)
+    except Exception:
+        return {}
+
+
 class PaymentIntentRequest(BaseModel):
     plan: str
 
 class PaymentIntentResponse(BaseModel):
     clientSecret: str
+
+
+class ConfirmPaymentRequest(BaseModel):
+    payment_intent_id: str
 
 @router.post("/create-payment-intent", response_model=PaymentIntentResponse)
 async def create_payment_intent(
@@ -72,6 +92,62 @@ async def create_payment_intent(
         logger.error(f"Stripe Error: {e}")
         raise HTTPException(status_code=400, detail="Payment processing error")
 
+
+@router.post("/confirm-payment")
+async def confirm_payment(
+    request: ConfirmPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Verify a succeeded PaymentIntent and apply the purchased plan.
+
+    Webhooks remain the production-grade source of truth, but local development
+    often cannot receive Stripe webhooks. This endpoint closes that gap without
+    trusting the browser: the server retrieves the PaymentIntent directly from
+    Stripe and checks ownership/status before changing the user.
+    """
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe is not configured"
+        )
+
+    try:
+        intent = stripe.PaymentIntent.retrieve(request.payment_intent_id)
+    except Exception as e:
+        logger.error(f"Stripe payment verification error: {e}")
+        raise HTTPException(status_code=400, detail="Payment verification failed")
+
+    metadata = _stripe_mapping_to_dict(getattr(intent, "metadata", None))
+    if str(metadata.get("user_id")) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Payment does not belong to current user")
+
+    if intent.status != "succeeded":
+        raise HTTPException(status_code=400, detail=f"Payment is not succeeded: {intent.status}")
+
+    plan = str(metadata.get("plan", "")).upper()
+    if plan not in PLAN_CREDITS:
+        raise HTTPException(status_code=400, detail="Invalid payment plan")
+
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    was_already_pro = user.role == UserRole.PRO
+    user.role = UserRole.PRO
+    if not was_already_pro:
+        user.credits += PLAN_CREDITS.get(plan, 0)
+
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "status": "success",
+        "role": user.role.value,
+        "credits": user.credits,
+    }
+
 @router.post("/webhook")
 async def stripe_webhook(
     request: Request,
@@ -107,7 +183,7 @@ async def stripe_webhook(
     event_type = event.type
     if event_type == "payment_intent.succeeded":
         payment_intent = event.data.object
-        metadata = payment_intent.metadata
+        metadata = _stripe_mapping_to_dict(payment_intent.metadata)
 
         user_id = metadata.get("user_id")
         plan = metadata.get("plan")

@@ -1,0 +1,15 @@
+{
+  "name": "ayu-colorizex-diplom",
+  "version": "1.0.0",
+  "description": "AI destekli goruntu renklendirme ve restorasyon platformu. Siyah-beyaz fotograflari ve videolari yapay zeka ile otomatik olarak renklendirir, eski fotograflari restore eder.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

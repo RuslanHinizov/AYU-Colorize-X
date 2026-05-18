@@ -1,0 +1,60 @@
+# Virtual environments (large — never needed in Docker image)
+.venv/
+venv/
+env/
+
+# Git and IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Test artifacts
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local environment — the image must get these from Docker env vars
+.env
+.env.local
+
+# Large binary/media files not needed at build time
+ai_models/
+Bringing-Old-Photos-Back-to-Life/
+CodeFormer/weights/
+CodeFormer/inputs/
+CodeFormer/results/
+CodeFormer/assets/
+gfpgan/
+media/
+models/*.pth
+models/tmp*
+result_images/
+output/
+temp_ms_restore/
+video/
+dummy/
+e2e_assets/
+*.db
+test_*.db
+*.pth
+*.pt
+*.onnx
+*.ckpt
+*.dat
+*.zip
+
+# Log files
+*.log
+backend_log.txt
+backend_err.log
+
+# Node (shouldn't be here, but just in case)
+node_modules/

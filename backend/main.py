@@ -31,8 +31,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from config import settings
-from database import engine, Base
+from database import engine, Base, ensure_sqlite_dev_schema
 from routers import auth, jobs, admin, payments, websocket
+from services.job_events import start_job_event_bridge
+from services.system_settings import get_system_settings
+import asyncio
 import os
 
 # Create media directories
@@ -44,8 +47,21 @@ async def lifespan(app: FastAPI):
     # Startup: Create database tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await ensure_sqlite_dev_schema(conn)
+    await get_system_settings()
+
+    app.state.job_event_stop = asyncio.Event()
+    app.state.job_event_bridge = asyncio.create_task(
+        start_job_event_bridge(app.state.job_event_stop)
+    )
     yield
     # Shutdown: Clean up resources
+    app.state.job_event_stop.set()
+    app.state.job_event_bridge.cancel()
+    try:
+        await app.state.job_event_bridge
+    except asyncio.CancelledError:
+        pass
     await engine.dispose()
 
 app = FastAPI(
@@ -76,7 +92,10 @@ MAINTENANCE_ALLOWED_EXACT = ("/", "/health")
 @app.middleware("http")
 async def maintenance_mode_check(request: Request, call_next):
     """Block non-admin API requests when maintenance mode is active"""
-    from app_state import app_settings as _settings
+    try:
+        _settings = await get_system_settings()
+    except Exception:
+        from app_state import app_settings as _settings
 
     if _settings.get("maintenance_mode", False):
         path = request.url.path

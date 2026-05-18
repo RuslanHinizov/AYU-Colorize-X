@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 import torch
 import os
 import shutil
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,20 @@ logger = logging.getLogger(__name__)
 _ddcolor_repo_path = str(Path(__file__).parent.parent / "ddcolor_repo")
 if _ddcolor_repo_path not in sys.path:
     sys.path.insert(0, _ddcolor_repo_path)
+
+
+def _prefer_ddcolor_basicsr() -> None:
+    """Ensure DDColor imports its bundled basicsr instead of CodeFormer's."""
+    if _ddcolor_repo_path in sys.path:
+        sys.path.remove(_ddcolor_repo_path)
+    sys.path.insert(0, _ddcolor_repo_path)
+
+    basicsr_mod = sys.modules.get("basicsr")
+    mod_file = getattr(basicsr_mod, "__file__", "") if basicsr_mod else ""
+    if basicsr_mod is not None and _ddcolor_repo_path not in mod_file:
+        stale = [name for name in sys.modules if name == "basicsr" or name.startswith("basicsr.")]
+        for name in stale:
+            del sys.modules[name]
 
 
 class ModelCache:
@@ -64,6 +79,7 @@ class ModelCache:
 
             logger.info(f"Loading DDColor: {cache_key}")
 
+            _prefer_ddcolor_basicsr()
             from ddcolor import DDColor, ColorizationPipeline, build_ddcolor_model
 
             # Model paths
@@ -131,14 +147,35 @@ class ModelCache:
             logger.error(f"Failed to download DDColor model: {e}")
 
     # Keep legacy DeOldify methods for backward compatibility (video colorization)
-    def _setup_model_directory(self, model_path: Path) -> bool:
-        """Ensure model is in the correct directory for DeOldify"""
-        os.makedirs("models", exist_ok=True)
-        target_path = Path("models") / model_path.name
-        if not target_path.exists() and model_path.exists():
-            shutil.copy(model_path, target_path)
-            return True
-        return target_path.exists()
+    def _setup_model_directory(self, model_path: Path) -> Path:
+        """Prepare DeOldify's expected ``<root>/models/*.pth`` layout.
+
+        DeOldify hardcodes FastAI's ``learn.load()`` convention, which reads
+        weights from ``root_folder/models``. The application keeps canonical
+        model weights in ``ai_models`` to avoid mixing runtime weights with ORM
+        modules, so the worker creates a process-local hardlink/copy in temp.
+        """
+        runtime_root = Path(
+            os.getenv(
+                "DEOLDIFY_RUNTIME_ROOT",
+                str(Path(tempfile.gettempdir()) / "ayu-colorizex" / "deoldify"),
+            )
+        )
+        target_dir = runtime_root / "models"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / model_path.name
+
+        if target_path.exists():
+            if target_path.stat().st_size == model_path.stat().st_size:
+                return runtime_root
+            target_path.unlink()
+
+        try:
+            os.link(model_path, target_path)
+        except OSError:
+            shutil.copy2(model_path, target_path)
+
+        return runtime_root
 
     def get_video_colorizer(self, device_name: str = "cpu"):
         """
@@ -155,9 +192,9 @@ class ModelCache:
             logger.info(f"Loading video colorizer: {cache_key}")
 
             try:
-                from deoldify.visualize import get_video_colorizer
-            except ImportError:
-                logger.error("DeOldify not installed (needed for video colorization)")
+                from deoldify.visualize import get_stable_video_colorizer
+            except Exception as exc:
+                logger.exception("DeOldify could not be imported for video colorization: %s", exc)
                 return None
 
             # Model path
@@ -167,8 +204,8 @@ class ModelCache:
             if not video_model_path.exists():
                 raise FileNotFoundError(f"Video model file {video_model_path} not found")
 
-            # Setup model directory
-            self._setup_model_directory(video_model_path)
+            # Setup DeOldify-compatible model directory without polluting backend/models.
+            runtime_root = self._setup_model_directory(video_model_path)
 
             # Configure device
             device = self.get_device(device_name)
@@ -209,7 +246,10 @@ class ModelCache:
 
             # Create video colorizer
             try:
-                video_colorizer = get_video_colorizer()
+                video_colorizer = get_stable_video_colorizer(
+                    root_folder=runtime_root,
+                    weights_name=video_model_path.stem,
+                )
             finally:
                 torch.load = _original_torch_load  # Always restore original torch.load
 

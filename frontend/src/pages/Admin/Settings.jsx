@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { motion } from 'framer-motion';
 import { Save, AlertTriangle, Bell, Shield, Zap, Loader2, CheckCircle } from 'lucide-react';
 import axios from '../../lib/axios';
 
@@ -24,7 +24,7 @@ export default function AdminSettings() {
         }
     };
 
-    useEffect(() => { fetchSettings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { fetchSettings(); }, []);
 
     const handleSave = async () => {
         setSaving(true);
@@ -33,7 +33,7 @@ export default function AdminSettings() {
             await axios.post('/admin/system/settings', settings);
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
-        } catch (error) {
+        } catch {
             alert("Ayarlar kaydedilemedi");
         }
         setSaving(false);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Shield, User, GraduationCap, Star, Ban, CheckCircle,
     Edit2, Trash2, X, Activity, Clock, Key, Bell, BellOff,
@@ -37,7 +37,7 @@ export default function AdminUsers() {
         try {
             await axios.put(`/admin/users/${userId}`, { role: newRole });
             fetchUsers();
-        } catch (error) {
+        } catch {
             alert(t('common.error'));
         }
     };
@@ -50,7 +50,7 @@ export default function AdminUsers() {
             if (selectedUser?.id === userId) {
                 setSelectedUser(prev => prev ? { ...prev, is_active: isActive } : null);
             }
-        } catch (error) {
+        } catch {
             alert(t('common.error'));
         }
     };
@@ -66,7 +66,7 @@ export default function AdminUsers() {
         try {
             await axios.put(`/admin/users/${userId}`, { credits });
             fetchUsers();
-        } catch (error) {
+        } catch {
             alert(t('common.error'));
         }
     };
@@ -563,8 +563,8 @@ function CreateUserModal({ onClose, onCreated }) {
             setError('E-posta ve şifre zorunludur');
             return;
         }
-        if (form.password.length < 6) {
-            setError('Şifre en az 6 karakter olmalı');
+        if (form.password.length < 8) {
+            setError('Şifre en az 8 karakter olmalı');
             return;
         }
 
@@ -635,7 +635,7 @@ function CreateUserModal({ onClose, onCreated }) {
                             type="password"
                             value={form.password}
                             onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
-                            placeholder="En az 6 karakter"
+                            placeholder="En az 8 karakter"
                             className="input-field !text-sm"
                             minLength={6}
                             required

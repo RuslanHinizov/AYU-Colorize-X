@@ -14,23 +14,56 @@ from services import (
     decode_access_token
 )
 import time
-from collections import defaultdict
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-# Simple in-memory rate limiter
-_rate_limit_store: dict = defaultdict(list)
+# Simple in-memory rate limiter (suitable for single-worker dev; use Redis-based
+# throttling when running multiple workers in production)
+_rate_limit_store: dict = {}
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 10  # max attempts per window
+# Prune the store when it grows beyond this size to prevent unbounded memory growth
+_RATE_LIMIT_MAX_IPS = 10_000
 
 def check_rate_limit(ip: str):
     """Check if IP has exceeded rate limit"""
     now = time.time()
-    # Clean old entries
-    _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if now - t < RATE_LIMIT_WINDOW]
+    cutoff = now - RATE_LIMIT_WINDOW
+
+    # Prune expired entries for this IP
+    if ip in _rate_limit_store:
+        _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if t > cutoff]
+    else:
+        _rate_limit_store[ip] = []
+
     if len(_rate_limit_store[ip]) >= RATE_LIMIT_MAX:
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+
     _rate_limit_store[ip].append(now)
+
+    # Prune entire store if it grows too large (evict IPs with no recent activity)
+    if len(_rate_limit_store) > _RATE_LIMIT_MAX_IPS:
+        stale = [k for k, v in _rate_limit_store.items() if not v or max(v) < cutoff]
+        for k in stale:
+            del _rate_limit_store[k]
+
+
+# ─── Initial credit grants ────────────────────────────────────────────────────
+_STUDENT_CREDITS = 100
+_USER_CREDITS = 10
+
+
+def user_to_dict(user: "User") -> dict:
+    """Serialise a User ORM object to the standard auth response dict."""
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "role": user.role.value,
+        "credits": user.credits,
+        "is_active": user.is_active,
+    }
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 class RegisterRequest(BaseModel):
@@ -40,8 +73,10 @@ class RegisterRequest(BaseModel):
     @field_validator('password')
     @classmethod
     def validate_password_length(cls, v):
-        if len(v) < 6:
-            raise ValueError('Password must be at least 6 characters')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if len(v) > 128:
+            raise ValueError('Password must not exceed 128 characters')
         return v
 
 class LoginResponse(BaseModel):
@@ -72,7 +107,7 @@ async def register(request: RegisterRequest, req: Request, db: AsyncSession = De
     
     # Determine user role based on email
     role = UserRole.STUDENT if is_student_email(request.email) else UserRole.USER
-    credits = 100 if role == UserRole.STUDENT else 10
+    credits = _STUDENT_CREDITS if role == UserRole.STUDENT else _USER_CREDITS
     
     # Create new user
     new_user = User(
@@ -89,17 +124,8 @@ async def register(request: RegisterRequest, req: Request, db: AsyncSession = De
     # Create access token
     access_token = create_access_token(data={"sub": request.email, "user_id": str(new_user.id)})
     
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": str(new_user.id),
-            "email": new_user.email,
-            "role": new_user.role.value,
-            "credits": new_user.credits,
-            "is_active": new_user.is_active
-        }
-    }
+    return {"access_token": access_token, "token_type": "bearer", "user": user_to_dict(new_user)}
+
 
 @router.post("/login", response_model=LoginResponse)
 async def login(req: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
@@ -125,17 +151,8 @@ async def login(req: Request, form_data: OAuth2PasswordRequestForm = Depends(), 
     # Create access token
     access_token = create_access_token(data={"sub": user.email, "user_id": str(user.id)})
     
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "role": user.role.value,
-            "credits": user.credits,
-            "is_active": user.is_active
-        }
-    }
+    return {"access_token": access_token, "token_type": "bearer", "user": user_to_dict(user)}
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
     """Get current authenticated user"""
@@ -171,13 +188,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user information"""
-    return {
-        "id": str(current_user.id),
-        "email": current_user.email,
-        "role": current_user.role.value,
-        "credits": current_user.credits,
-        "is_active": current_user.is_active
-    }
+    return user_to_dict(current_user)
 
 class UpgradeRequest(BaseModel):
     role: str
@@ -254,11 +265,15 @@ async def get_api_key_info(
     current_user: User = Depends(get_current_user)
 ):
     """Get API key information (masked)"""
-    if not current_user.api_key:
+    if not current_user.api_key_hash and not current_user.api_key:
         return {"has_key": False, "key": None, "created_at": None}
-    
-    # Mask the key, show only first 8 and last 4 characters
-    masked_key = current_user.api_key[:8] + "..." + current_user.api_key[-4:]
+
+    # Do not expose plaintext keys. Legacy rows with api_key are masked and
+    # replaced the next time the user generates a key.
+    if current_user.api_key_hash:
+        masked_key = f"acx_...{current_user.api_key_last4 or '****'}"
+    else:
+        masked_key = current_user.api_key[:8] + "..." + current_user.api_key[-4:]
     
     return {
         "has_key": True,
@@ -295,13 +310,15 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db)
 ):
     """Revoke the current API key"""
-    if not current_user.api_key:
+    if not current_user.api_key_hash and not current_user.api_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No API key to revoke"
         )
     
     current_user.api_key = None
+    current_user.api_key_hash = None
+    current_user.api_key_last4 = None
     current_user.api_key_created_at = None
     await db.commit()
     
@@ -310,9 +327,18 @@ async def revoke_api_key(
 
 # ============ USER SETTINGS ============
 
+_ALLOWED_THEMES = {"dark", "light", "system"}
+
 class UserSettingsUpdate(BaseModel):
-    email_notifications: bool = None
-    theme: str = None
+    email_notifications: Optional[bool] = None
+    theme: Optional[str] = None
+
+    @field_validator('theme')
+    @classmethod
+    def validate_theme(cls, v):
+        if v is not None and v not in _ALLOWED_THEMES:
+            raise ValueError(f"Theme must be one of: {', '.join(sorted(_ALLOWED_THEMES))}")
+        return v
 
 
 @router.get("/settings")

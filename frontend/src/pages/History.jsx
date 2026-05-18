@@ -62,9 +62,10 @@ export default function History() {
 
     const getTypeLabel = (type) => {
         switch (type) {
-            case 'COLORIZE': return 'Renklendirme';
-            case 'VIDEO_COLORIZE': return 'Video';
-            case 'RESTORE': return 'Restorasyon';
+            case 'COLORIZE': return t('history.typeColorize');
+            case 'VIDEO_COLORIZE': return t('history.typeVideo');
+            case 'RESTORE': return t('history.typeRestore');
+            case 'UPSCALE': return t('history.typeUpscale');
             default: return type;
         }
     };
@@ -136,7 +137,7 @@ export default function History() {
                         </div>
                         <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm">
-                                {[{ id: 'all', label: 'Tümü' }, { id: 'photos', label: 'Fotoğraf' }, { id: 'videos', label: 'Video' }, { id: 'favorites', label: '❤️' }].map((tab) => (
+                                {[{ id: 'all', label: t('history.all') }, { id: 'photos', label: t('history.photos') }, { id: 'videos', label: t('history.videos') }, { id: 'favorites', label: '❤️' }].map((tab) => (
                                     <button key={tab.id} onClick={() => setFilter(tab.id)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === tab.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-muted hover:text-foreground'}`}>
                                         {tab.label}
                                     </button>
@@ -154,7 +155,7 @@ export default function History() {
                                 <Search className="w-10 h-10 text-muted" />
                             </div>
                             <h3 className="font-display text-xl font-bold mb-2">{t('history.emptyTitle')}</h3>
-                            <p className="text-muted">Henüz işlenmiş dosya yok</p>
+                            <p className="text-muted">{t('history.emptySubtitle')}</p>
                         </motion.div>
                     ) : (
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -231,7 +232,7 @@ export default function History() {
                                                     <>
                                                         <button onClick={() => handleDownload(job.id, job.type)} className="btn-primary flex-1 py-2 text-sm flex items-center justify-center gap-2">
                                                             <Download className="w-4 h-4" />
-                                                            İndir
+                                                            {t('history.downloadBtn')}
                                                         </button>
                                                         <button onClick={() => setShowCollectionModal(job.id)} className="p-2 rounded-xl bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
                                                             <FolderPlus className="w-4 h-4" />
@@ -257,7 +258,7 @@ export default function History() {
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowCollectionModal(null)}>
                         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="card p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-display text-lg font-bold">Koleksiyona Ekle</h3>
+                                <h3 className="font-display text-lg font-bold">{t('history.addToCollection')}</h3>
                                 <button onClick={() => setShowCollectionModal(null)} className="p-1 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
                             </div>
                             {collections.length > 0 && (
@@ -270,8 +271,8 @@ export default function History() {
                                 </div>
                             )}
                             <div className="flex gap-2">
-                                <input type="text" value={newCollectionName} onChange={e => setNewCollectionName(e.target.value)} placeholder="Yeni koleksiyon..." className="input-field flex-1" />
-                                <button onClick={() => setCollection(showCollectionModal, newCollectionName)} disabled={!newCollectionName.trim()} className="btn-primary px-4">Ekle</button>
+                                <input type="text" value={newCollectionName} onChange={e => setNewCollectionName(e.target.value)} placeholder={t('history.newCollectionPlaceholder')} className="input-field flex-1" />
+                                <button onClick={() => setCollection(showCollectionModal, newCollectionName)} disabled={!newCollectionName.trim()} className="btn-primary px-4">{t('history.addBtn')}</button>
                             </div>
                         </motion.div>
                     </motion.div>

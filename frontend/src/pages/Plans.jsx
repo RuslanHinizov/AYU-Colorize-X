@@ -34,7 +34,7 @@ export default function Plans() {
     const handlePaymentSuccess = async () => {
         await refreshUser();
         setSelectedPlan(null);
-        alert(`Ödeme başarılı! Artık ${selectedPlan} planındasınız.`);
+        alert(t('plans.paymentSuccess').replace('{plan}', selectedPlan));
     };
 
     const handleCancelSubscription = async () => {
@@ -61,7 +61,7 @@ export default function Plans() {
                 { name: t('plans.features.standardSpeed'), included: true },
                 { name: t('plans.features.cpuOnly'), included: true },
                 { name: t('plans.features.maxRes'), included: true },
-                { name: '3 fotoğraf / 2 video limiti', included: true },
+                { name: t('plans.freeFeatureLimit'), included: true },
                 { name: t('plans.features.noBatch'), included: false },
             ]
         },
@@ -185,7 +185,7 @@ export default function Plans() {
                                         else if (!plan.current) {
                                             if (plan.id === 'free') handleCancelSubscription();
                                             else if (plan.id === 'pro') handleUpgrade('PRO');
-                                            else alert(t('plans.contactSales') || "Enterprise için satış ile iletişime geçin.");
+                                            else alert(t('plans.contactSales'));
                                         }
                                     }}
                                     disabled={plan.current && plan.id !== 'pro'}
@@ -204,7 +204,7 @@ export default function Plans() {
                                             ? t('plans.cancelSubscription')
                                             : t('plans.currentPlan')
                                         : plan.id === 'free'
-                                            ? t('plans.downgrade') || "Düşür"
+                                            ? t('plans.downgrade')
                                             : (
                                                 <>
                                                     {t('plans.upgradeNow')}
@@ -220,7 +220,7 @@ export default function Plans() {
 
                 {/* Footer */}
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-16 text-center">
-                    <p className="text-muted text-sm">Tüm planlar 7 günlük para iade garantisi içerir. Soru sorulmaz.</p>
+                    <p className="text-muted text-sm">{t('plans.guarantee')}</p>
                 </motion.div>
             </div>
 

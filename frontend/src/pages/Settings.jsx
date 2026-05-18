@@ -26,14 +26,14 @@ export default function Settings() {
     const fetchUserSettings = async () => { try { const r = await axios.get(`/auth/settings`); setEmailNotifications(r.data.email_notifications); } catch {} };
 
     const generateApiKey = async () => {
-        if (!confirm('Mevcut API anahtarınız değiştirilecek. Devam?')) return;
+        if (!confirm(t('settings.generateApiKeyConfirm'))) return;
         setApiKeyLoading(true);
         try { const r = await axios.post(`/auth/api-key/generate`); setNewApiKey(r.data.api_key); setShowApiKey(true); fetchApiKeyInfo(); } catch (e) { alert(e.response?.data?.detail || 'Hata'); }
         finally { setApiKeyLoading(false); }
     };
 
     const revokeApiKey = async () => {
-        if (!confirm('API anahtarınızı iptal etmek istediğinize emin misiniz?')) return;
+        if (!confirm(t('settings.revokeApiKeyConfirm'))) return;
         setApiKeyLoading(true);
         try { await axios.delete(`/auth/api-key`); setApiKeyInfo({ has_key: false }); setNewApiKey(null); } catch (e) { alert(e.response?.data?.detail || 'Hata'); }
         finally { setApiKeyLoading(false); }
@@ -58,7 +58,7 @@ export default function Settings() {
         link.click();
     };
 
-    const handleClearCache = () => { if (confirm(t('settings.confirmClear') || 'Tüm yerel verileri silmek istediğinize emin misiniz?')) { localStorage.clear(); window.location.reload(); } };
+    const handleClearCache = () => { if (confirm(t('settings.confirmClear'))) { localStorage.clear(); window.location.reload(); } };
 
     const themes = [
         { id: 'light', name: t('settings.light'), icon: Sun, preview: 'bg-slate-100' },
@@ -87,7 +87,7 @@ export default function Settings() {
                 <div className="max-w-3xl mx-auto">
                     <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
                         <h1 className="font-display text-3xl font-bold mb-2">{t('settings.title')}</h1>
-                        <p className="text-muted">ColorizeX deneyiminizi özelleştirin</p>
+                        <p className="text-muted">{t('settings.customizeDesc')}</p>
                     </motion.div>
 
                     <div className="space-y-6">
@@ -99,7 +99,7 @@ export default function Settings() {
                                 </div>
                                 <div>
                                     <h2 className="font-semibold">{t('settings.appearance')}</h2>
-                                    <p className="text-xs text-muted">Tema seçin</p>
+                                    <p className="text-xs text-muted">{t('settings.themeSelectDesc')}</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -122,7 +122,7 @@ export default function Settings() {
                                 </div>
                                 <div>
                                     <h2 className="font-semibold">{t('settings.language')}</h2>
-                                    <p className="text-xs text-muted">Dil seçin</p>
+                                    <p className="text-xs text-muted">{t('settings.langSelectDesc')}</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -143,14 +143,14 @@ export default function Settings() {
                                     <Bell className="w-5 h-5 text-success" />
                                 </div>
                                 <div>
-                                    <h2 className="font-semibold">Bildirimler</h2>
-                                    <p className="text-xs text-muted">Bildirim tercihlerinizi yönetin</p>
+                                    <h2 className="font-semibold">{t('settings.notificationsTitle')}</h2>
+                                    <p className="text-xs text-muted">{t('settings.notificationsDesc')}</p>
                                 </div>
                             </div>
                             <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between">
                                 <div>
-                                    <h3 className="font-medium">E-posta Bildirimleri</h3>
-                                    <p className="text-sm text-muted">Uzun işlemler tamamlandığında e-posta alın</p>
+                                    <h3 className="font-medium">{t('settings.emailNotificationsTitle')}</h3>
+                                    <p className="text-sm text-muted">{t('settings.emailNotificationsDesc')}</p>
                                 </div>
                                 <button onClick={() => updateEmailNotifications(!emailNotifications)} disabled={savingSettings} className={`relative w-14 h-8 rounded-full transition-colors ${emailNotifications ? 'bg-success' : 'bg-white/10'}`}>
                                     <motion.div className="absolute top-1 w-6 h-6 bg-white rounded-full shadow-md flex items-center justify-center" animate={{ left: emailNotifications ? '1.75rem' : '0.25rem' }}>
@@ -167,8 +167,8 @@ export default function Settings() {
                                     <Key className="w-5 h-5 text-accent" />
                                 </div>
                                 <div>
-                                    <h2 className="font-semibold">API Anahtarı</h2>
-                                    <p className="text-xs text-muted">ColorizeX API'ye programatik erişim</p>
+                                    <h2 className="font-semibold">{t('settings.apiKeyTitle')}</h2>
+                                    <p className="text-xs text-muted">{t('settings.apiKeyDesc')}</p>
                                 </div>
                                 {!isPro && <span className="ml-auto px-2 py-1 rounded-lg bg-accent/10 text-accent text-xs font-bold">PRO</span>}
                             </div>
@@ -177,7 +177,7 @@ export default function Settings() {
                                     {apiKeyInfo?.has_key && (
                                         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
                                             <div className="flex items-center justify-between mb-2">
-                                                <span className="text-sm text-muted">Mevcut API Anahtarı</span>
+                                                <span className="text-sm text-muted">{t('settings.currentApiKey')}</span>
                                                 <span className="text-xs text-muted">{apiKeyInfo.created_at ? new Date(apiKeyInfo.created_at).toLocaleDateString() : ''}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -188,8 +188,8 @@ export default function Settings() {
                                     )}
                                     {newApiKey && (
                                         <div className="p-4 rounded-xl bg-success/10 border border-success/20">
-                                            <div className="flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-success" /><span className="text-sm font-medium text-success">Yeni API Anahtarı Oluşturuldu!</span></div>
-                                            <p className="text-xs text-muted mb-3">Bu anahtarı şimdi kopyalayın. Güvenlik nedeniyle tekrar gösterilmeyecek.</p>
+                                            <div className="flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-success" /><span className="text-sm font-medium text-success">{t('settings.newApiKeyCreated')}</span></div>
+                                            <p className="text-xs text-muted mb-3">{t('settings.copyApiKeyWarning')}</p>
                                             <div className="flex items-center gap-2">
                                                 <code className="flex-1 p-2 rounded-lg bg-background font-mono text-xs break-all">{newApiKey}</code>
                                                 <button onClick={copyApiKey} className="p-2 rounded-lg bg-success text-white hover:bg-success/90">{copySuccess ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</button>
@@ -199,15 +199,15 @@ export default function Settings() {
                                     <div className="flex gap-3">
                                         <button onClick={generateApiKey} disabled={apiKeyLoading} className="btn-primary flex-1 flex items-center justify-center gap-2">
                                             {apiKeyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                                            {apiKeyInfo?.has_key ? 'Yeniden Oluştur' : 'API Anahtarı Oluştur'}
+                                            {apiKeyInfo?.has_key ? t('settings.regenerateKey') : t('settings.createApiKey')}
                                         </button>
-                                        {apiKeyInfo?.has_key && <button onClick={revokeApiKey} disabled={apiKeyLoading} className="btn-secondary text-danger hover:bg-danger/10">İptal Et</button>}
+                                        {apiKeyInfo?.has_key && <button onClick={revokeApiKey} disabled={apiKeyLoading} className="btn-secondary text-danger hover:bg-danger/10">{t('settings.revokeKey')}</button>}
                                     </div>
                                 </div>
                             ) : (
                                 <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                                    <p className="text-muted mb-3">API erişimi için PRO'ya yükseltin</p>
-                                    <a href="/plans" className="btn-primary inline-flex items-center gap-2">PRO'ya Yükselt</a>
+                                    <p className="text-muted mb-3">{t('settings.upgradeForApiDesc')}</p>
+                                    <a href="/plans" className="btn-primary inline-flex items-center gap-2">{t('settings.upgradeForApiBtn')}</a>
                                 </div>
                             )}
                         </motion.div>
@@ -220,7 +220,7 @@ export default function Settings() {
                                 </div>
                                 <div>
                                     <h2 className="font-semibold">{t('settings.processing')}</h2>
-                                    <p className="text-xs text-muted">İşlem davranışını yapılandırın</p>
+                                    <p className="text-xs text-muted">{t('settings.processingConfigDesc')}</p>
                                 </div>
                             </div>
                             <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between">
@@ -242,7 +242,7 @@ export default function Settings() {
                                 </div>
                                 <div>
                                     <h2 className="font-semibold">{t('settings.dataManagement')}</h2>
-                                    <p className="text-xs text-muted">Yerel verilerinizi yönetin</p>
+                                    <p className="text-xs text-muted">{t('settings.localDataDesc')}</p>
                                 </div>
                             </div>
                             <div className="space-y-3">
@@ -268,11 +268,11 @@ export default function Settings() {
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="card bg-white/[0.02]">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-xs font-mono text-muted uppercase tracking-wider mb-1">Giriş yapılan hesap</p>
+                                        <p className="text-xs font-mono text-muted uppercase tracking-wider mb-1">{t('settings.loggedInAccount')}</p>
                                         <p className="font-semibold">{user.email}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-mono text-muted uppercase tracking-wider mb-1">Plan</p>
+                                        <p className="text-xs font-mono text-muted uppercase tracking-wider mb-1">{t('settings.planLabel')}</p>
                                         <span className={`px-2 py-1 rounded-lg text-xs font-bold ${user.role === 'ADMIN' ? 'bg-danger/20 text-danger' : user.role === 'PRO' ? 'bg-accent/20 text-accent' : 'bg-primary/20 text-primary'}`}>{user.role}</span>
                                     </div>
                                 </div>

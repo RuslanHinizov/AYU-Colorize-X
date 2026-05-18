@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Activity, Clock, CheckCircle, XCircle, Trash2, RefreshCw, Loader2,
     Search, Eye, X, User, Image, AlertTriangle, Cpu, Sliders, Star, Folder
@@ -27,7 +27,7 @@ export default function AdminJobs() {
         fetchJobs();
         const interval = setInterval(fetchJobs, 5000);
         return () => clearInterval(interval);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleDeleteJob = async (jobId) => {
         if (!confirm("Bu işlemi silmek/durdurmak istediğinize emin misiniz?")) return;
@@ -35,7 +35,7 @@ export default function AdminJobs() {
             await axios.delete(`/admin/jobs/${jobId}`);
             fetchJobs();
             if (selectedJob?.id === jobId) setSelectedJob(null);
-        } catch (error) {
+        } catch {
             alert("İşlem silinemedi");
         }
     };

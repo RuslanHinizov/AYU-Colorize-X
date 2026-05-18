@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Users, Activity, CheckCircle, XCircle, Server, Cpu, HardDrive, Zap,
-    TrendingUp, Clock, Wifi, BarChart3, Database, Trash2, RefreshCw,
-    Shield, UserPlus, Ban, Settings, FileText, AlertTriangle
+    TrendingUp, Clock, Wifi, BarChart3, Database, Trash2,
+    UserPlus, Ban, Settings, FileText
 } from 'lucide-react';
 import axios from '../../lib/axios';
 
@@ -42,7 +42,7 @@ export default function AdminDashboard() {
         fetchData();
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleClearCache = async () => {
         try {
@@ -217,9 +217,9 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <ResourceGauge label="CPU Kullanımı" value={resources.cpu} icon={Cpu} id="cpu" />
-                    <ResourceGauge label="RAM Kullanımı" value={resources.ram} icon={Activity} id="ram" />
-                    <ResourceGauge label="Disk Kullanımı" value={resources.disk} icon={HardDrive} id="disk" />
+                    <ResourceGauge label="CPU Kullanımı" value={resources.cpu} icon={Cpu} />
+                    <ResourceGauge label="RAM Kullanımı" value={resources.ram} icon={Activity} />
+                    <ResourceGauge label="Disk Kullanımı" value={resources.disk} icon={HardDrive} />
                 </div>
 
                 {resources.gpu && resources.gpu.length > 0 && (
@@ -359,7 +359,6 @@ function getActionLabel(action) {
 function BarChart({ data, color }) {
     if (!data || data.length === 0) return null;
     const maxVal = Math.max(...data.map(d => d.count), 1);
-    const barWidth = 100 / data.length;
 
     return (
         <div className="relative">
@@ -474,7 +473,7 @@ function StatCard({ title, value, subtitle, icon: Icon, color, delay }) {
     );
 }
 
-function ResourceGauge({ label, value, icon: Icon, id }) {
+function ResourceGauge({ label, value, icon: Icon }) {
     const circumference = 2 * Math.PI * 48;
     const strokeDashoffset = circumference - (circumference * value) / 100;
 

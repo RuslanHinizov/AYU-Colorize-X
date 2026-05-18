@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { MoveHorizontal, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
-export default function BeforeAfterSlider({ original, modified }) {
+export default function BeforeAfterSlider({
+    original,
+    modified,
+    beforeLabel,
+    afterLabel,
+    avoidTopRightControls = false,
+}) {
+    const { t } = useLanguage();
+    const resolvedBeforeLabel = beforeLabel ?? t('editor.original');
+    const resolvedAfterLabel = afterLabel ?? t('editor.colorized');
     const [sliderPosition, setSliderPosition] = useState(50);
     const [isDragging, setIsDragging] = useState(false);
     const [zoom, setZoom] = useState(1);
@@ -112,10 +122,10 @@ export default function BeforeAfterSlider({ original, modified }) {
 
             {/* Labels */}
             <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 border border-white/10">
-                Orijinal
+                {resolvedBeforeLabel}
             </div>
-            <div className="absolute top-4 right-4 bg-gradient-to-r from-primary to-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 shadow-lg">
-                İşlenmiş
+            <div className={`absolute ${avoidTopRightControls ? 'top-20 right-4' : 'top-4 right-4'} bg-gradient-to-r from-primary to-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 shadow-lg`}>
+                {resolvedAfterLabel}
             </div>
         </div>
     );

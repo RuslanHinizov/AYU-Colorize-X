@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Component, useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { LanguageProvider } from './context/LanguageContext';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Sidebar from './components/Sidebar';
 import axios from './lib/axios';
@@ -10,7 +10,7 @@ import Register from './pages/Register';
 import Home from './pages/Home';
 import PhotoEditor from './pages/PhotoEditor';
 import VideoEditor from './pages/VideoEditor';
-import RestorePage from './pages/RestorePage';
+import EnhancePage from './pages/EnhancePage';
 
 import History from './pages/History';
 import Settings from './pages/Settings';
@@ -97,21 +97,22 @@ function AnnouncementBanner() {
 
 // Maintenance Mode Page
 function MaintenancePage() {
+  const { t } = useLanguage();
   return (
     <div className="min-h-screen flex items-center justify-center bg-[rgb(var(--color-background))] p-8">
       <div className="text-center max-w-md">
         <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-[rgb(var(--color-danger))] to-[rgb(248,150,113)] flex items-center justify-center" style={{ boxShadow: '0 8px 32px rgb(var(--color-danger) / 0.3)' }}>
           <svg className="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86l-8.4 14c-.6 1.02.15 2.14 1.29 2.14h16.64c1.14 0 1.89-1.12 1.29-2.14l-8.4-14c-.6-1.03-2.12-1.03-2.72 0z" /></svg>
         </div>
-        <h1 className="font-display text-3xl font-bold text-gradient mb-3">Bakım Modu</h1>
+        <h1 className="font-display text-3xl font-bold text-gradient mb-3">{t('common.maintenanceTitle')}</h1>
         <p className="text-[rgb(var(--color-text-muted))] mb-6">
-          Sistem şu anda bakım modunda. Lütfen daha sonra tekrar deneyin.
+          {t('common.maintenanceDesc')}
         </p>
         <button
           onClick={() => window.location.reload()}
           className="btn-primary px-6 py-3"
         >
-          Tekrar Dene
+          {t('common.tryAgain')}
         </button>
       </div>
     </div>
@@ -262,10 +263,26 @@ function App() {
                   }
                 />
                 <Route
+                  path="/enhance"
+                  element={
+                    <ProtectedRoute>
+                      <EnhancePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/restore"
                   element={
                     <ProtectedRoute>
-                      <RestorePage />
+                      <EnhancePage initialMode="restore" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/upscale"
+                  element={
+                    <ProtectedRoute>
+                      <EnhancePage initialMode="upscale" />
                     </ProtectedRoute>
                   }
                 />

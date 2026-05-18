@@ -58,26 +58,33 @@ def _setup_codeformer_paths():
                     del sys.modules[k]
 
 
-def _load_bg_upsampler(device: torch.device):
-    """Load Real-ESRGAN as background upsampler (used by CodeFormer pipeline)."""
-    if "bg_upsampler" in _cached_models:
-        return _cached_models["bg_upsampler"]
+def _load_bg_upsampler(device: torch.device, scale: int = 2):
+    """Load Real-ESRGAN as background upsampler. Supports 2x and 4x."""
+    scale = 4 if scale >= 4 else 2
+    cache_key = f"bg_upsampler_{device.type}_{scale}x"
+    if cache_key in _cached_models:
+        return _cached_models[cache_key]
 
     _setup_codeformer_paths()
     from basicsr.archs.rrdbnet_arch import RRDBNet
     from basicsr.utils.realesrgan_utils import RealESRGANer
 
-    model_path = MODELS_DIR / "RealESRGAN_x2plus.pth"
+    model_filename = f"RealESRGAN_x{scale}plus.pth"
+    model_path = MODELS_DIR / model_filename
     if not model_path.exists():
-        model_path = CODEFORMER_WEIGHTS_DIR / "realesrgan" / "RealESRGAN_x2plus.pth"
+        model_path = CODEFORMER_WEIGHTS_DIR / "realesrgan" / model_filename
     if not model_path.exists():
-        logger.warning("RealESRGAN_x2plus.pth not found, no bg upsampling")
+        # fallback to x2 if x4 not found
+        if scale == 4:
+            logger.warning(f"{model_filename} not found, falling back to x2")
+            return _load_bg_upsampler(device, scale=2)
+        logger.warning(f"{model_filename} not found, no bg upsampling")
         return None
 
-    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
+    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
     use_half = device.type == "cuda"
     upsampler = RealESRGANer(
-        scale=2,
+        scale=scale,
         model_path=str(model_path),
         model=model,
         tile=400,
@@ -85,15 +92,46 @@ def _load_bg_upsampler(device: torch.device):
         pre_pad=0,
         half=use_half,
     )
-    _cached_models["bg_upsampler"] = upsampler
-    logger.info(f"BG upsampler (Real-ESRGAN x2) loaded from {model_path}")
+    _cached_models[cache_key] = upsampler
+    logger.info(f"BG upsampler (Real-ESRGAN x{scale}) loaded from {model_path}")
     return upsampler
+
+
+def upscale_realesrgan(image: np.ndarray, device: torch.device, scale: int = 2) -> np.ndarray:
+    """Upscale a BGR image with Real-ESRGAN (2x or 4x), with a deterministic OpenCV fallback."""
+    if image is None:
+        raise ValueError("Input image is empty")
+
+    upsampler = _load_bg_upsampler(device, scale=scale)
+    if upsampler is None:
+        logger.warning("Real-ESRGAN weights unavailable; using Lanczos fallback")
+        return cv2.resize(
+            image,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+
+    try:
+        output, _ = upsampler.enhance(image, outscale=scale)
+        return output
+    except Exception as exc:
+        logger.warning("Real-ESRGAN failed; using Lanczos fallback: %s", exc)
+        return cv2.resize(
+            image,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_LANCZOS4,
+        )
 
 
 def _load_codeformer_net(device: torch.device):
     """Load official CodeFormer network."""
-    if "codeformer_net" in _cached_models:
-        return _cached_models["codeformer_net"]
+    cache_key = f"codeformer_net_{device.type}"
+    if cache_key in _cached_models:
+        return _cached_models[cache_key]
 
     _setup_codeformer_paths()
     from basicsr.utils.registry import ARCH_REGISTRY
@@ -111,9 +149,23 @@ def _load_codeformer_net(device: torch.device):
     checkpoint = torch.load(str(weight_path), map_location='cpu', weights_only=False)['params_ema']
     net.load_state_dict(checkpoint)
     net.eval()
-    _cached_models["codeformer_net"] = net
+    _cached_models[cache_key] = net
     logger.info(f"CodeFormer loaded from {weight_path}")
     return net
+
+
+def _force_facelib_device(device: torch.device) -> None:
+    """Force CodeFormer's facelib modules to honor the requested device.
+
+    RetinaFace keeps a module-level `device` global and uses it during
+    detection, even when FaceRestoreHelper is constructed with CPU. Without
+    this patch, CPU restoration can still feed CUDA tensors into CPU weights.
+    """
+    try:
+        from facelib.detection.retinaface import retinaface as retinaface_module
+        retinaface_module.device = device
+    except Exception as exc:
+        logger.warning("Could not override facelib runtime device: %s", exc)
 
 
 def restore_photo(
@@ -135,17 +187,9 @@ def restore_photo(
     from basicsr.utils import img2tensor, tensor2img
     from facelib.utils.face_restoration_helper import FaceRestoreHelper
 
-    # Patch torch.load: always load to CPU first to avoid CUDA serialization issues
-    _original_torch_load = torch.load
-    def _safe_torch_load(f, map_location=None, pickle_module=None, **kwargs):
-        kwargs['weights_only'] = False
-        if pickle_module is not None:
-            return _original_torch_load(f, map_location='cpu', pickle_module=pickle_module, **kwargs)
-        return _original_torch_load(f, map_location='cpu', **kwargs)
-    torch.load = _safe_torch_load
-
     start = time.time()
     device = get_device(device_str)
+    _force_facelib_device(device)
     upscale_factor = 2  # Background upscale factor
     fidelity_weight = 0.5  # CodeFormer fidelity (0=quality, 1=fidelity)
 
@@ -164,8 +208,20 @@ def restore_photo(
     if progress_callback:
         progress_callback(10)
 
-    # 2. Load CodeFormer
-    net = _load_codeformer_net(device)
+    # 2. Load CodeFormer. Patch torch.load only for model loading and always restore it.
+    _original_torch_load = torch.load
+
+    def _safe_torch_load(f, map_location=None, pickle_module=None, **kwargs):
+        kwargs['weights_only'] = False
+        if pickle_module is not None:
+            return _original_torch_load(f, map_location='cpu', pickle_module=pickle_module, **kwargs)
+        return _original_torch_load(f, map_location='cpu', **kwargs)
+
+    torch.load = _safe_torch_load
+    try:
+        net = _load_codeformer_net(device)
+    finally:
+        torch.load = _original_torch_load
 
     if progress_callback:
         progress_callback(20)
@@ -215,13 +271,9 @@ def restore_photo(
     if progress_callback:
         progress_callback(70)
 
-    # 5. Background upsampling with Real-ESRGAN x2
-    bg_upsampler = _load_bg_upsampler(device)
-    if bg_upsampler is not None:
-        bg_img, _ = bg_upsampler.enhance(img, outscale=upscale_factor)
-        logger.info(f"Background upsampled: {bg_img.shape[1]}x{bg_img.shape[0]}")
-    else:
-        bg_img = None
+    # 5. Background upsampling with Real-ESRGAN x2 (falls back to Lanczos)
+    bg_img = upscale_realesrgan(img, device, scale=upscale_factor)
+    logger.info(f"Background upsampled: {bg_img.shape[1]}x{bg_img.shape[0]}")
 
     if progress_callback:
         progress_callback(85)
@@ -242,5 +294,4 @@ def restore_photo(
     if progress_callback:
         progress_callback(95)
 
-    torch.load = _original_torch_load
     return elapsed

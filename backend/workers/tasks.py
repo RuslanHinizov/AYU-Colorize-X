@@ -3,51 +3,100 @@ Celery Tasks for Background Job Processing
 WebSocket notifications ve model caching ile optimize edilmiş.
 """
 from workers.celery_app import celery_app
-from services.ai_engine import colorize_image, colorize_video, upscale_image
+from services.ai_engine import colorize_image, colorize_video, restore_image, upscale_image
 from models.job import JobStatus
-from celery import current_task
-import asyncio
 import logging
+import os
+
+from sqlalchemy import create_engine, update
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 logger = logging.getLogger(__name__)
 
-
-def get_event_loop():
-    """Get or create event loop for async operations (Python 3.10+ safe)"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
+_sync_engine = None
+_sync_session_factory = None
+_sync_engine_pid = None
 
 
-def run_async(coro):
-    """Run async coroutine from sync context"""
-    loop = get_event_loop()
-    return loop.run_until_complete(coro)
+def _sync_database_url() -> str:
+    """Return a worker-safe synchronous SQLAlchemy URL.
+
+    Celery tasks run in synchronous prefork workers. Reusing FastAPI's asyncpg
+    engine/event loop inside those children causes asyncpg connection state to
+    leak across operations. The worker only needs simple status updates, so it
+    uses an isolated synchronous engine.
+    """
+    if os.getenv("USE_SQLITE", "true").lower() == "true":
+        return "sqlite:///./ayu_colorize.db"
+
+    from config import settings
+
+    url = settings.DATABASE_URL
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if url.startswith("sqlite+aiosqlite:///"):
+        return url.replace("sqlite+aiosqlite:///", "sqlite:///", 1)
+    return url
 
 
-async def update_job_in_db(job_id: str, **kwargs):
+def _get_sync_session_factory():
+    global _sync_engine, _sync_session_factory, _sync_engine_pid
+
+    pid = os.getpid()
+    if _sync_session_factory is not None and _sync_engine_pid == pid:
+        return _sync_session_factory
+
+    if _sync_engine is not None:
+        try:
+            _sync_engine.dispose()
+        except Exception:
+            logger.debug("Could not dispose inherited worker DB engine", exc_info=True)
+
+    url = _sync_database_url()
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    _sync_engine = create_engine(
+        url,
+        future=True,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+        connect_args=connect_args,
+    )
+    _sync_session_factory = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=_sync_engine,
+        expire_on_commit=False,
+    )
+    _sync_engine_pid = pid
+    return _sync_session_factory
+
+
+def update_job_in_db(job_id: str, **kwargs):
     """Update job status in database"""
-    from database import SessionLocal
-    from sqlalchemy import update
     from models import Job
-    
-    async with SessionLocal() as session:
-        await session.execute(
+
+    if "status" in kwargs and kwargs["status"] is not None:
+        kwargs["status"] = kwargs["status"] if isinstance(kwargs["status"], JobStatus) else JobStatus(kwargs["status"])
+
+    session_factory = _get_sync_session_factory()
+    with session_factory() as session:
+        session.execute(
             update(Job).where(Job.id == job_id).values(**kwargs)
         )
-        await session.commit()
+        session.commit()
 
 
-async def send_ws_notification(user_id: str, notification_type: str, **kwargs):
-    """Send WebSocket notification to user"""
+def send_ws_notification(user_id: str, notification_type: str, **kwargs):
+    """Publish a WebSocket notification via Redis.
+
+    The worker is a different process from FastAPI, so direct access to the
+    process-local WebSocket manager cannot reach connected browser sockets.
+    """
     try:
-        from routers.websocket import manager
-        
-        message = {"type": notification_type, **kwargs}
-        await manager.send_to_user(user_id, message)
+        from services.job_events import publish_job_event
+
+        publish_job_event(user_id, notification_type, **kwargs)
     except Exception as e:
         logger.warning(f"Failed to send WebSocket notification: {e}")
 
@@ -63,22 +112,57 @@ def create_progress_callback(job_id: str, user_id: str):
             
             try:
                 # Update database
-                run_async(update_job_in_db(job_id, progress=progress))
+                update_job_in_db(job_id, progress=progress)
                 
                 # Send WebSocket notification
-                run_async(send_ws_notification(
+                send_ws_notification(
                     user_id, 
                     "job_progress",
                     job_id=job_id,
                     progress=progress
-                ))
+                )
             except Exception as e:
                 logger.error(f"Progress callback error: {e}")
     
     return callback
 
 
-@celery_app.task(name="process_image_task", bind=True)
+def _finalize_job(job_id: str, user_id: str, output_path: str, processing_time: float) -> dict:
+    """Mark a job as COMPLETED and send a WebSocket completion notification."""
+    update_job_in_db(
+        job_id,
+        status=JobStatus.COMPLETED.value,
+        progress=100,
+        processing_time=processing_time,
+    )
+    send_ws_notification(
+        user_id,
+        "job_completed",
+        job_id=job_id,
+        output_path=output_path,
+        processing_time=processing_time,
+    )
+    return {"status": "completed", "processing_time": processing_time, "job_id": job_id}
+
+
+def _fail_job(job_id: str, user_id: str, error: Exception) -> dict:
+    """Mark a job as FAILED and send a WebSocket failure notification."""
+    update_job_in_db(
+        job_id,
+        status=JobStatus.FAILED.value,
+        progress=0,
+        error_message=str(error),
+    )
+    send_ws_notification(
+        user_id,
+        "job_failed",
+        job_id=job_id,
+        error=str(error),
+    )
+    return {"status": "failed", "error": str(error), "job_id": job_id}
+
+
+@celery_app.task(name="workers.tasks.process_image_task", bind=True)
 def process_image_task(
     self,
     job_id: str, 
@@ -90,7 +174,8 @@ def process_image_task(
     model: str = "artistic",
     device: str = "cpu",
     watermark: bool = False,
-    resize: bool = False
+    resize: bool = False,
+    enhance_mode: str = "auto"
 ):
     """
     Celery task to process an image with progress updates.
@@ -101,7 +186,7 @@ def process_image_task(
     
     try:
         # Update status to processing
-        run_async(update_job_in_db(job_id, status=JobStatus.PROCESSING.value, progress=0))
+        update_job_in_db(job_id, status=JobStatus.PROCESSING.value, progress=0)
         
         processing_time = 0
         
@@ -118,64 +203,34 @@ def process_image_task(
             )
 
         elif job_type == "UPSCALE":
-            processing_time = upscale_image(input_path, output_path)
+            processing_time = upscale_image(
+                input_path, output_path,
+                scale=2,
+                device=device,
+                enhance_mode=enhance_mode,
+                progress_callback=progress_callback,
+            )
         elif job_type == "RESTORE":
-            from services.restoration_engine import restore_photo
-            processing_time = restore_photo(
-                input_path, output_path, device, 2,
-                progress_callback=progress_callback
+            processing_time = restore_image(
+                input_path,
+                output_path,
+                device=device,
+                scale=2,
+                enhance_mode=enhance_mode,
+                progress_callback=progress_callback,
             )
         else:
             raise ValueError(f"Unknown job type: {job_type}")
         
-        # Update job as completed
-        run_async(update_job_in_db(
-            job_id, 
-            status=JobStatus.COMPLETED.value, 
-            progress=100,
-            processing_time=processing_time
-        ))
-        
-        # Send completion notification via WebSocket
-        run_async(send_ws_notification(
-            user_id,
-            "job_completed",
-            job_id=job_id,
-            output_path=output_path,
-            processing_time=processing_time
-        ))
-        
         logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
-        
-        return {
-            "status": "completed", 
-            "processing_time": processing_time, 
-            "job_id": job_id
-        }
-        
+        return _finalize_job(job_id, user_id, output_path, processing_time)
+
     except Exception as e:
         logger.exception(f"Job {job_id} failed: {e}")
-        
-        # Update job as failed
-        run_async(update_job_in_db(
-            job_id, 
-            status=JobStatus.FAILED.value, 
-            progress=0,
-            error_message=str(e)
-        ))
-        
-        # Send failure notification via WebSocket
-        run_async(send_ws_notification(
-            user_id,
-            "job_failed",
-            job_id=job_id,
-            error=str(e)
-        ))
-        
-        return {"status": "failed", "error": str(e), "job_id": job_id}
+        return _fail_job(job_id, user_id, e)
 
 
-@celery_app.task(name="process_video_task", bind=True)
+@celery_app.task(name="workers.tasks.process_video_task", bind=True)
 def process_video_task(
     self,
     job_id: str,
@@ -194,7 +249,7 @@ def process_video_task(
     
     try:
         # Update status to processing
-        run_async(update_job_in_db(job_id, status=JobStatus.PROCESSING.value, progress=0))
+        update_job_in_db(job_id, status=JobStatus.PROCESSING.value, progress=0)
         
         processing_time = colorize_video(
             input_path,
@@ -204,46 +259,9 @@ def process_video_task(
             progress_callback=progress_callback
         )
         
-        # Update job as completed
-        run_async(update_job_in_db(
-            job_id,
-            status=JobStatus.COMPLETED.value,
-            progress=100,
-            processing_time=processing_time
-        ))
-        
-        # Send completion notification
-        run_async(send_ws_notification(
-            user_id,
-            "job_completed",
-            job_id=job_id,
-            output_path=output_path,
-            processing_time=processing_time
-        ))
-        
         logger.info(f"Video job {job_id} completed in {processing_time:.2f}s")
-        
-        return {
-            "status": "completed",
-            "processing_time": processing_time,
-            "job_id": job_id
-        }
-        
+        return _finalize_job(job_id, user_id, output_path, processing_time)
+
     except Exception as e:
         logger.exception(f"Video job {job_id} failed: {e}")
-        
-        run_async(update_job_in_db(
-            job_id,
-            status=JobStatus.FAILED.value,
-            progress=0,
-            error_message=str(e)
-        ))
-        
-        run_async(send_ws_notification(
-            user_id,
-            "job_failed",
-            job_id=job_id,
-            error=str(e)
-        ))
-        
-        return {"status": "failed", "error": str(e), "job_id": job_id}
+        return _fail_job(job_id, user_id, e)

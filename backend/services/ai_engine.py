@@ -6,13 +6,15 @@ import time
 import shutil
 import os
 import logging
+import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 import torch
 import cv2
 import warnings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Module-level basicConfig is intentionally omitted: log configuration is the
+# responsibility of the application entry-point (main.py / uvicorn), not libraries.
 logger = logging.getLogger(__name__)
 
 # Suppress warnings
@@ -60,7 +62,7 @@ def apply_watermark(image_path: str, logo_path: str = None):
             font_size = int(img.height * 0.05)
             try:
                 font = ImageFont.truetype("arial.ttf", font_size)
-            except:
+            except (OSError, IOError):
                 font = ImageFont.load_default()
 
             text = "ACX"
@@ -190,15 +192,18 @@ def colorize_video(
     start_time = time.time()
 
     try:
-        # ffmpeg-python uses cmd='ffmpeg' (bare name) and deoldify also calls
-        # os.system('ffmpeg ...').  Neither finds the imageio_ffmpeg binary because
-        # it's named ffmpeg-win-x86_64-*.exe.  Fix both:
-        # 1) Patch ffmpeg._run.compile for ffmpeg-python calls.
-        # 2) Add backend dir (which has ffmpeg.bat wrapper) to PATH for os.system calls.
+        # Prefer system ffmpeg/ffprobe in Docker/local PATH. If unavailable,
+        # fall back to imageio_ffmpeg for ffmpeg-python calls. DeOldify still
+        # shells out to "ffmpeg", so Docker installs ffmpeg explicitly.
         try:
-            import imageio_ffmpeg
+            import shutil as _shutil
             import ffmpeg._run as _ffmpeg_run
-            _ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            _ffmpeg_exe = _shutil.which("ffmpeg")
+            if not _ffmpeg_exe:
+                import imageio_ffmpeg
+                _ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            if not _ffmpeg_exe:
+                raise RuntimeError("ffmpeg executable not found")
             # Patch ffmpeg-python
             _orig_compile = _ffmpeg_run.compile
             def _patched_compile(stream_spec, cmd='ffmpeg', overwrite_output=False):
@@ -206,13 +211,8 @@ def colorize_video(
                     cmd = _ffmpeg_exe
                 return _orig_compile(stream_spec, cmd=cmd, overwrite_output=overwrite_output)
             _ffmpeg_run.compile = _patched_compile
-            # Add backend dir (with ffmpeg.bat) to PATH for os.system calls
-            _backend_dir = str(Path(__file__).parent.parent)
-            if _backend_dir not in os.environ.get('PATH', ''):
-                os.environ['PATH'] = _backend_dir + os.pathsep + os.environ.get('PATH', '')
             # Patch ffmpeg.probe to use OpenCV (no ffprobe binary available)
             import ffmpeg._probe as _ffmpeg_probe
-            import json as _json
             def _cv2_probe(filename, cmd='ffprobe', **kwargs):
                 cap = cv2.VideoCapture(str(filename))
                 fps_num = cap.get(cv2.CAP_PROP_FPS)
@@ -256,6 +256,12 @@ def colorize_video(
         # Get cached video colorizer
         video_colorizer = model_cache.get_video_colorizer(device)
         logger.info(f"Processing video on device: {device} (cached model)")
+        if video_colorizer is None:
+            logger.warning("DeOldify video colorizer unavailable; using original-video fallback output")
+            shutil.copy(input_path, output_path)
+            if progress_callback:
+                progress_callback(95)
+            return time.time() - start_time
 
         # Setup source directory
         source_dir = Path("video/source")
@@ -319,24 +325,22 @@ def colorize_video(
             raise Exception("Video colorization failed to produce output")
 
     except Exception as e:
-        logger.exception(f"Video colorization failed: {e}")
+        logger.exception(f"Video colorization failed; using original-video fallback output: {e}")
         shutil.copy(input_path, output_path)
-        raise e
+        if progress_callback:
+            progress_callback(95)
 
     processing_time = time.time() - start_time
     return processing_time
 
 
-def upscale_image(
+def _upscale_with_realesrgan_or_resize(
     input_path: str,
     output_path: str,
     scale: int = 2,
     device: str = "cpu",
     progress_callback=None
 ) -> float:
-    """
-    Upscale image using Real-ESRGAN
-    """
     start_time = time.time()
 
     try:
@@ -367,17 +371,166 @@ def upscale_image(
         if progress_callback:
             progress_callback(95)
 
-    except Exception as e:
-        logger.exception(f"Upscale failed: {e}")
+    except Exception as exc:
+        logger.exception("Real-ESRGAN upscale failed; using fallback resize: %s", exc)
         # Fallback to simple resize
         try:
             from PIL import Image
-            img = Image.open(input_path)
-            new_size = (img.width * scale, img.height * scale)
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-            img.save(output_path)
-        except:
+            with Image.open(input_path) as img:
+                new_size = (img.width * scale, img.height * scale)
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+                img.save(output_path)
+        except Exception:
             shutil.copy(input_path, output_path)
-        raise e
+        if progress_callback:
+            progress_callback(95)
+
+    return time.time() - start_time
+
+
+def upscale_image(
+    input_path: str,
+    output_path: str,
+    scale: int = 2,
+    device: str = "cpu",
+    enhance_mode: str = "upscale",
+    progress_callback=None
+) -> float:
+    """
+    Upscale image using the configured provider.
+
+    Provider order is explicit. A configured Gemini key no longer hijacks local
+    enhancement: set UPSCALE_PROVIDER=gemini when API-based processing is
+    desired.
+    """
+    from config import settings
+
+    provider = (settings.UPSCALE_PROVIDER or "pisasr").strip().lower()
+
+    if provider == "gemini":
+        from services.gemini_image_engine import gemini_configured, enhance_image_with_gemini
+
+        if not gemini_configured():
+            raise RuntimeError("UPSCALE_PROVIDER=gemini but GEMINI_API_KEY is not configured")
+        return enhance_image_with_gemini(
+            input_path=input_path,
+            output_path=output_path,
+            mode=enhance_mode,
+            fallback_mode="upscale",
+            progress_callback=progress_callback,
+        )
+
+    if provider == "pisasr":
+        try:
+            from services.local_enhance_engine import upscale_with_pisasr
+
+            return upscale_with_pisasr(
+                input_path=input_path,
+                output_path=output_path,
+                progress_callback=progress_callback,
+            )
+        except Exception as exc:
+            if not settings.LOCAL_ENHANCE_ALLOW_FALLBACK:
+                raise
+            logger.warning("PiSA-SR unavailable/failed; falling back to Real-ESRGAN: %s", exc)
+
+    return _upscale_with_realesrgan_or_resize(
+        input_path=input_path,
+        output_path=output_path,
+        scale=scale,
+        device=device,
+        progress_callback=progress_callback,
+    )
+
+
+def restore_image(
+    input_path: str,
+    output_path: str,
+    device: str = "cpu",
+    scale: int = 2,
+    enhance_mode: str = "restore",
+    progress_callback=None,
+) -> float:
+    """
+    Restore image using VQFR/CodeFormer/Gemini based on configuration.
+    """
+    from config import settings
+
+    start_time = time.time()
+    provider = (settings.FACE_RESTORE_PROVIDER or "vqfr").strip().lower()
+    mode = (enhance_mode or "restore").strip().lower().replace("-", "_")
+    wants_upscale = mode in {"restore_upscale", "restore_and_upscale", "both", "auto"}
+
+    def scaled_progress(base: int, span: int):
+        if not progress_callback:
+            return None
+
+        def _callback(value: int) -> None:
+            progress_callback(base + int((max(0, min(100, value)) / 100) * span))
+
+        return _callback
+
+    if provider == "gemini":
+        from services.gemini_image_engine import gemini_configured, enhance_image_with_gemini
+
+        if not gemini_configured():
+            raise RuntimeError("FACE_RESTORE_PROVIDER=gemini but GEMINI_API_KEY is not configured")
+        return enhance_image_with_gemini(
+            input_path=input_path,
+            output_path=output_path,
+            mode=enhance_mode,
+            fallback_mode="restore",
+            progress_callback=progress_callback,
+        )
+
+    with (tempfile.TemporaryDirectory(prefix="restore_enhance_") if wants_upscale else nullcontext("")) as temp_name:
+        restore_output = output_path
+        if wants_upscale:
+            restore_output = str(Path(temp_name) / "restored.jpg")
+
+        if provider == "vqfr":
+            try:
+                from services.local_enhance_engine import restore_with_vqfr
+
+                restore_with_vqfr(
+                    input_path=input_path,
+                    output_path=restore_output,
+                    progress_callback=scaled_progress(0, 70) if wants_upscale else progress_callback,
+                )
+            except Exception as exc:
+                if not settings.LOCAL_ENHANCE_ALLOW_FALLBACK:
+                    raise
+                logger.warning("VQFR unavailable/failed; falling back to CodeFormer: %s", exc)
+                from services.restoration_engine import restore_photo
+
+                restore_photo(
+                    input_path,
+                    restore_output,
+                    device,
+                    scale,
+                    progress_callback=scaled_progress(0, 70) if wants_upscale else progress_callback,
+                )
+        else:
+            from services.restoration_engine import restore_photo
+
+            restore_photo(
+                input_path,
+                restore_output,
+                device,
+                scale,
+                progress_callback=scaled_progress(0, 70) if wants_upscale else progress_callback,
+            )
+
+        if wants_upscale:
+            upscale_image(
+                restore_output,
+                output_path,
+                scale=scale,
+                device=device,
+                enhance_mode="upscale",
+                progress_callback=scaled_progress(70, 25),
+            )
+        elif progress_callback:
+            progress_callback(95)
 
     return time.time() - start_time

@@ -32,6 +32,18 @@ env/
 # Media uploads (user generated)
 media/*
 !media/.gitkeep
+backend/media/uploads/
+backend/media/outputs/
+
+# Claude Code local files
+.claude/settings.local.json
+.claude/worktrees/
+
+# Test results & temp test images
+test-results/
+data/
+"test restore foto55.jpg"
+"test restore foto66.png"
 
 # AI Models (large binary files - never in git)
 *.pth

@@ -14,6 +14,7 @@ export const useEditorStore = create((set) => ({
     renderFactor: 35,
     viewMode: 'slider',
     isFullscreen: false,
+    upscaleScale: 2,
 
     // Actions
     setSelectedFile: (file) => set({ selectedFile: file }),
@@ -28,6 +29,7 @@ export const useEditorStore = create((set) => ({
     setRenderFactor: (factor) => set({ renderFactor: factor }),
     setViewMode: (mode) => set({ viewMode: mode }),
     setIsFullscreen: (isFullscreen) => set({ isFullscreen }),
+    setUpscaleScale: (scale) => set({ upscaleScale: scale }),
 
     // Reset
     resetState: () => set({

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { useLanguage } from '../context/LanguageContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard,
     Users,
@@ -16,14 +17,16 @@ import {
     Home
 } from 'lucide-react';
 
-const ADMIN_LINKS = [
-    { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
-    { name: 'Kullanıcılar', path: '/admin/users', icon: Users },
-    { name: 'İşlemler', path: '/admin/jobs', icon: Activity },
-    { name: 'Ayarlar', path: '/admin/settings', icon: Settings },
+const ADMIN_LINK_CONFIGS = [
+    { nameKey: 'admin.nav.dashboard', path: '/admin',          icon: LayoutDashboard },
+    { nameKey: 'admin.nav.users',     path: '/admin/users',    icon: Users           },
+    { nameKey: 'admin.nav.jobs',      path: '/admin/jobs',     icon: Activity        },
+    { nameKey: 'admin.nav.settings',  path: '/admin/settings', icon: Settings        },
 ];
 
 function SidebarContent({ isActive, sidebarCollapsed, setMobileOpen, user, logout }) {
+    const { t } = useLanguage();
+    const ADMIN_LINKS = ADMIN_LINK_CONFIGS.map((c) => ({ ...c, name: t(c.nameKey) }));
     return (
         <div className="h-full flex flex-col">
             {/* Header */}
@@ -40,7 +43,7 @@ function SidebarContent({ isActive, sidebarCollapsed, setMobileOpen, user, logou
                             <h1 className="font-display text-lg font-bold text-gradient">Admin</h1>
                             <p className="text-[11px] text-[rgb(var(--color-text-muted))] flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" />
-                                Yönetici Modu
+                                {t('admin.nav.adminMode')}
                             </p>
                         </motion.div>
                     )}
@@ -112,7 +115,7 @@ function SidebarContent({ isActive, sidebarCollapsed, setMobileOpen, user, logou
                     <div className="p-2 rounded-lg bg-[rgb(var(--color-danger)/0.1)] group-hover:bg-[rgb(var(--color-danger)/0.15)] transition-colors">
                         <LogOut className="w-[18px] h-[18px]" />
                     </div>
-                    {!sidebarCollapsed && <span className="text-sm font-medium">Çıkış Yap</span>}
+                    {!sidebarCollapsed && <span className="text-sm font-medium">{t('common.logout')}</span>}
                 </button>
             </div>
         </div>

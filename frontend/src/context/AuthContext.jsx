@@ -89,7 +89,13 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const logout = () => {
+    const logout = async () => {
+        // Blacklist the token server-side before clearing local state
+        try {
+            await api.post('/auth/logout');
+        } catch {
+            // Proceed with local logout even if the server call fails
+        }
         localStorage.removeItem('token');
         setToken(null);
         setUser(null);

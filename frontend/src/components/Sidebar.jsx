@@ -6,7 +6,7 @@ import {
     LogOut, User, Crown, ChevronRight, Lock, Sparkles, Zap
 } from 'lucide-react';
 import { useState } from 'react';
-import { motion } from 'framer-motion'; // eslint-disable-line no-unused-vars
+import { motion } from 'framer-motion';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
@@ -18,7 +18,7 @@ export default function Sidebar() {
         { name: t('nav.home'), path: '/', icon: Home },
         { name: t('nav.photo'), path: '/photo', icon: Aperture },
         { name: t('nav.video'), path: '/video', icon: Film },
-        { name: t('nav.restoration'), path: '/restore', icon: Wand2 },
+        { name: 'AI Enhance', path: '/enhance', icon: Wand2 },
         { name: t('nav.history'), path: '/history', icon: Clock },
         { name: t('nav.settings'), path: '/settings', icon: Cog },
     ];
@@ -171,7 +171,7 @@ export default function Sidebar() {
                                     {/* Credits */}
                                     <div className="p-3 rounded-xl bg-background/50 border border-white/[0.05]">
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="text-[10px] text-muted font-mono uppercase tracking-wider">Krediler</span>
+                                            <span className="text-[10px] text-muted font-mono uppercase tracking-wider">{t('common.credits')}</span>
                                             <span className="text-lg font-display font-bold text-gradient">{user.credits}</span>
                                         </div>
                                         <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
