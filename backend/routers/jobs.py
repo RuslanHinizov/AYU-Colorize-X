@@ -135,6 +135,9 @@ async def create_job(
     device: str = "cpu",
     enhance_mode: str = "auto",
     scale: int = 2,
+    color_preset: str = "none",
+    bg_type: str = "transparent",
+    bg_color: Optional[str] = None,
 
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -155,8 +158,14 @@ async def create_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="enhance_mode must be 'auto', 'restore', 'upscale', or 'restore_upscale'",
         )
-    if scale not in (2, 4):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="scale must be 2 or 4")
+    if scale not in (2, 4, 8):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="scale must be 2, 4, or 8")
+    color_preset = (color_preset or "none").strip().lower()
+    if color_preset not in ("none", "warm", "cold", "vintage", "vivid"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="color_preset must be none/warm/cold/vintage/vivid")
+    bg_type = (bg_type or "transparent").strip().lower()
+    if bg_type not in ("transparent", "white", "black", "color"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bg_type must be transparent/white/black/color")
 
     # Parse job type
     try:
@@ -267,7 +276,7 @@ async def create_job(
         # Try to use Celery, fallback to background task
         if use_celery():
             logger.info(f"Dispatching job {job_id} to Celery")
-            
+
             if job_type == JobType.VIDEO_COLORIZE:
                 from workers.tasks import process_video_task
                 process_video_task.delay(
@@ -292,8 +301,12 @@ async def create_job(
                     watermark=apply_watermark,
                     resize=resize_input,
                     enhance_mode=enhance_mode,
+                    scale=scale,
+                    color_preset=color_preset,
+                    bg_type=bg_type,
+                    bg_color=bg_color,
                 )
-            
+
             # Update status to processing
             new_job.status = JobStatus.PROCESSING
             await db.commit()
@@ -309,7 +322,7 @@ async def create_job(
                 process_job_inline(
                     job_id, user_id, job_type, input_path, output_path,
                     render_factor, model, device, apply_watermark, resize_input,
-                    enhance_mode, scale
+                    enhance_mode, scale, color_preset, bg_type, bg_color
                 )
             )
 
@@ -515,6 +528,9 @@ async def process_job_inline(
     resize: bool,
     enhance_mode: str = "auto",
     scale: int = 2,
+    color_preset: str = "none",
+    bg_type: str = "transparent",
+    bg_color: str = None,
 ):
     """
     Background job processing fallback when Celery is not available.
@@ -522,6 +538,7 @@ async def process_job_inline(
     Sends real-time WebSocket progress notifications.
     """
     from services.ai_engine import colorize_image, colorize_video, restore_image, upscale_image
+    from services.bg_service import remove_background
     from routers.websocket import notify_job_progress, notify_job_completed, notify_job_failed
     from database import SessionLocal
     from sqlalchemy import update
@@ -561,7 +578,7 @@ async def process_job_inline(
                 processing_time = await asyncio.to_thread(
                     colorize_image,
                     input_path, output_path, render_factor, model, device, watermark, resize,
-                    progress_callback
+                    progress_callback, color_preset
                 )
             elif job_type == JobType.VIDEO_COLORIZE:
                 processing_time = await asyncio.to_thread(
@@ -579,6 +596,12 @@ async def process_job_inline(
                 processing_time = await asyncio.to_thread(
                     restore_image,
                     input_path, output_path, device, scale, enhance_mode,
+                    progress_callback
+                )
+            elif job_type == JobType.BG_REMOVE:
+                processing_time = await asyncio.to_thread(
+                    remove_background,
+                    input_path, output_path, bg_type, bg_color,
                     progress_callback
                 )
             else:

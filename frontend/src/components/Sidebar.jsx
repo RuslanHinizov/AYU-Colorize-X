@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
     Home, Aperture, Film, Wand2, Clock, Cog, Shield,
-    LogOut, User, Crown, ChevronRight, Lock, Sparkles, Zap
+    LogOut, User, Crown, ChevronRight, Lock, Sparkles, Zap, Scissors
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
@@ -15,12 +15,13 @@ export default function Sidebar() {
     const [hoveredLink, setHoveredLink] = useState(null);
 
     const links = [
-        { name: t('nav.home'), path: '/', icon: Home },
-        { name: t('nav.photo'), path: '/photo', icon: Aperture },
-        { name: t('nav.video'), path: '/video', icon: Film },
-        { name: 'AI Enhance', path: '/enhance', icon: Wand2 },
-        { name: t('nav.history'), path: '/history', icon: Clock },
-        { name: t('nav.settings'), path: '/settings', icon: Cog },
+        { name: t('nav.home'),     path: '/',          icon: Home    },
+        { name: t('nav.photo'),    path: '/photo',     icon: Aperture },
+        { name: t('nav.video'),    path: '/video',     icon: Film    },
+        { name: 'AI Enhance',      path: '/enhance',   icon: Wand2   },
+        { name: t('nav.bgRemove'), path: '/bg-remove', icon: Scissors },
+        { name: t('nav.history'),  path: '/history',   icon: Clock   },
+        { name: t('nav.settings'), path: '/settings',  icon: Cog     },
     ];
 
     if (user?.role === 'ADMIN') {

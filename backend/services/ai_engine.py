@@ -112,6 +112,77 @@ def resize_image_if_needed(image_path: str, max_dimension: int = 1280):
         logger.error(f"Failed to resize image: {e}")
 
 
+def apply_color_preset(image_path: str, preset: str) -> None:
+    """
+    Apply a color grading preset to an already-saved image file.
+
+    Supported presets:
+      warm    — boost reds/yellows, reduce blues (nostalgic warm tone)
+      cold    — boost blues, reduce reds (cinematic cool tone)
+      vintage — desaturate + sepia tint (aged film look)
+      vivid   — boost saturation (pop-art vivid look)
+      none    — no change
+    """
+    if not preset or preset.strip().lower() in ("none", ""):
+        return
+
+    try:
+        from PIL import Image, ImageEnhance
+        import numpy as np
+
+        preset = preset.strip().lower()
+
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            arr = np.array(img, dtype=np.float32)
+
+            if preset == "warm":
+                # Boost R, reduce B
+                arr[:, :, 0] = np.clip(arr[:, :, 0] + 22, 0, 255)   # R +22
+                arr[:, :, 2] = np.clip(arr[:, :, 2] - 22, 0, 255)   # B -22
+
+            elif preset == "cold":
+                # Boost B, reduce R slightly
+                arr[:, :, 0] = np.clip(arr[:, :, 0] - 15, 0, 255)   # R -15
+                arr[:, :, 2] = np.clip(arr[:, :, 2] + 28, 0, 255)   # B +28
+
+            elif preset == "vintage":
+                # Desaturate 70% then add sepia tint
+                result_img = Image.fromarray(arr.astype(np.uint8))
+                gray = result_img.convert("L")
+                result_img = result_img.convert("RGB")
+                # Blend original with grayscale (desaturate to 70%)
+                result_img = Image.blend(
+                    result_img,
+                    gray.convert("RGB"),
+                    alpha=0.30
+                )
+                arr = np.array(result_img, dtype=np.float32)
+                # Sepia tint: shift R up, B down
+                arr[:, :, 0] = np.clip(arr[:, :, 0] + 15, 0, 255)   # R +15 (warmth)
+                arr[:, :, 2] = np.clip(arr[:, :, 2] - 20, 0, 255)   # B -20 (age)
+
+            elif preset == "vivid":
+                # Increase saturation by 30%
+                result_img = Image.fromarray(arr.astype(np.uint8))
+                enhancer = ImageEnhance.Color(result_img)
+                result_img = enhancer.enhance(1.35)
+                result_img.save(image_path, quality=95)
+                logger.info(f"Color preset '{preset}' applied to {image_path}")
+                return  # Early return — already saved
+
+            else:
+                logger.warning(f"Unknown color preset '{preset}', skipping")
+                return
+
+            result_img = Image.fromarray(arr.astype(np.uint8))
+            result_img.save(image_path, quality=95)
+            logger.info(f"Color preset '{preset}' applied to {image_path}")
+
+    except Exception as e:
+        logger.warning(f"Failed to apply color preset '{preset}': {e}")
+
+
 def colorize_image(
     input_path: str,
     output_path: str,
@@ -120,11 +191,13 @@ def colorize_image(
     device: str = "cpu",
     watermark: bool = False,
     resize: bool = False,
-    progress_callback=None
+    progress_callback=None,
+    color_preset: str = "none",
 ) -> float:
     """
     Colorize a black and white image using DDColor with cached model.
     model_name: 'artistic' or 'modelscope'
+    color_preset: 'none' | 'warm' | 'cold' | 'vintage' | 'vivid'
     """
     start_time = time.time()
 
@@ -156,12 +229,16 @@ def colorize_image(
             result = pipeline.process(img)
 
             if progress_callback:
-                progress_callback(80)
+                progress_callback(75)
 
             # Save result
             cv2.imwrite(output_path, result)
         else:
             raise RuntimeError("DDColor model not available. Please check model installation.")
+
+        # Apply color preset (post-processing tone grading)
+        if color_preset and color_preset.lower() != "none":
+            apply_color_preset(output_path, color_preset)
 
         # Apply Watermark if needed (Free plan limitation)
         if watermark:
@@ -341,7 +418,28 @@ def _upscale_with_realesrgan_or_resize(
     device: str = "cpu",
     progress_callback=None
 ) -> float:
+    """
+    Upscale using Real-ESRGAN.
+    scale=8 is achieved by chaining two 4x passes (4x → temp → 4x).
+    Input is capped at 512x512 for 8x to avoid memory exhaustion.
+    """
     start_time = time.time()
+
+    # For 8x: cap input resolution to avoid OOM
+    if scale == 8:
+        try:
+            from PIL import Image
+            with Image.open(input_path) as img:
+                w, h = img.size
+                if w > 512 or h > 512:
+                    ratio = min(512 / w, 512 / h)
+                    new_w = int(w * ratio)
+                    new_h = int(h * ratio)
+                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    img.save(input_path)
+                    logger.info(f"8x upscale: capped input from {w}x{h} to {new_w}x{new_h}")
+        except Exception as e:
+            logger.warning(f"Failed to cap input for 8x: {e}")
 
     try:
         from services.restoration_engine import upscale_realesrgan, get_device
@@ -350,23 +448,50 @@ def _upscale_with_realesrgan_or_resize(
             progress_callback(10)
 
         logger.info(f"Starting upscale {scale}x on device: {device}")
-
         torch_device = get_device(device)
-        image = cv2.imread(input_path)
 
-        if image is None:
-            raise ValueError(f"Could not load image: {input_path}")
+        if scale == 8:
+            # Chain: 4x → temp file → 4x
+            image = cv2.imread(input_path)
+            if image is None:
+                raise ValueError(f"Could not load image: {input_path}")
 
-        if progress_callback:
-            progress_callback(30)
+            if progress_callback:
+                progress_callback(20)
 
-        result = upscale_realesrgan(image, torch_device, scale=scale)
+            # First pass: 4x
+            result_4x = upscale_realesrgan(image, torch_device, scale=4)
 
-        if progress_callback:
-            progress_callback(80)
+            if progress_callback:
+                progress_callback(55)
 
-        cv2.imwrite(output_path, result)
-        logger.info(f"Upscaled from {image.shape[1]}x{image.shape[0]} to {result.shape[1]}x{result.shape[0]}")
+            # Second pass: 4x again (= 16x total but from capped input ≈ 8x from original)
+            result_8x = upscale_realesrgan(result_4x, torch_device, scale=4)
+
+            if progress_callback:
+                progress_callback(85)
+
+            cv2.imwrite(output_path, result_8x)
+            logger.info(
+                f"8x upscale: {image.shape[1]}x{image.shape[0]} → "
+                f"{result_4x.shape[1]}x{result_4x.shape[0]} → "
+                f"{result_8x.shape[1]}x{result_8x.shape[0]}"
+            )
+        else:
+            image = cv2.imread(input_path)
+            if image is None:
+                raise ValueError(f"Could not load image: {input_path}")
+
+            if progress_callback:
+                progress_callback(30)
+
+            result = upscale_realesrgan(image, torch_device, scale=scale)
+
+            if progress_callback:
+                progress_callback(80)
+
+            cv2.imwrite(output_path, result)
+            logger.info(f"Upscaled from {image.shape[1]}x{image.shape[0]} to {result.shape[1]}x{result.shape[0]}")
 
         if progress_callback:
             progress_callback(95)

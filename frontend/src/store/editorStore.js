@@ -15,6 +15,7 @@ export const useEditorStore = create((set) => ({
     viewMode: 'slider',
     isFullscreen: false,
     upscaleScale: 2,
+    colorPreset: 'none',
 
     // Actions
     setSelectedFile: (file) => set({ selectedFile: file }),
@@ -30,6 +31,7 @@ export const useEditorStore = create((set) => ({
     setViewMode: (mode) => set({ viewMode: mode }),
     setIsFullscreen: (isFullscreen) => set({ isFullscreen }),
     setUpscaleScale: (scale) => set({ upscaleScale: scale }),
+    setColorPreset: (preset) => set({ colorPreset: preset }),
 
     // Reset
     resetState: () => set({

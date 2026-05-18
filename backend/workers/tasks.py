@@ -4,6 +4,7 @@ WebSocket notifications ve model caching ile optimize edilmiş.
 """
 from workers.celery_app import celery_app
 from services.ai_engine import colorize_image, colorize_video, restore_image, upscale_image
+from services.bg_service import remove_background
 from models.job import JobStatus
 import logging
 import os
@@ -165,63 +166,80 @@ def _fail_job(job_id: str, user_id: str, error: Exception) -> dict:
 @celery_app.task(name="workers.tasks.process_image_task", bind=True)
 def process_image_task(
     self,
-    job_id: str, 
+    job_id: str,
     user_id: str,
-    job_type: str, 
-    input_path: str, 
-    output_path: str, 
+    job_type: str,
+    input_path: str,
+    output_path: str,
     render_factor: int = 35,
     model: str = "artistic",
     device: str = "cpu",
     watermark: bool = False,
     resize: bool = False,
-    enhance_mode: str = "auto"
+    enhance_mode: str = "auto",
+    scale: int = 2,
+    color_preset: str = "none",
+    bg_type: str = "transparent",
+    bg_color: str = None,
 ):
     """
     Celery task to process an image with progress updates.
+    Supports: COLORIZE (with color_preset), UPSCALE (scale 2/4/8), RESTORE, BG_REMOVE.
     """
     logger.info(f"Starting job {job_id} - Type: {job_type}")
-    
+
     progress_callback = create_progress_callback(job_id, user_id)
-    
+
     try:
         # Update status to processing
         update_job_in_db(job_id, status=JobStatus.PROCESSING.value, progress=0)
-        
+
         processing_time = 0
-        
+
         if job_type == "COLORIZE":
             processing_time = colorize_image(
-                input_path, 
-                output_path, 
-                render_factor, 
-                model, 
+                input_path,
+                output_path,
+                render_factor,
+                model,
                 device,
                 watermark,
                 resize,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                color_preset=color_preset,
             )
 
         elif job_type == "UPSCALE":
             processing_time = upscale_image(
                 input_path, output_path,
-                scale=2,
+                scale=scale,
                 device=device,
                 enhance_mode=enhance_mode,
                 progress_callback=progress_callback,
             )
+
         elif job_type == "RESTORE":
             processing_time = restore_image(
                 input_path,
                 output_path,
                 device=device,
-                scale=2,
+                scale=scale,
                 enhance_mode=enhance_mode,
                 progress_callback=progress_callback,
             )
+
+        elif job_type == "BG_REMOVE":
+            processing_time = remove_background(
+                input_path,
+                output_path,
+                bg_type=bg_type,
+                bg_color=bg_color,
+                progress_callback=progress_callback,
+            )
+
         else:
             raise ValueError(f"Unknown job type: {job_type}")
-        
+
         logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
         return _finalize_job(job_id, user_id, output_path, processing_time)
 

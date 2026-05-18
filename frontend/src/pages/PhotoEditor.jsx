@@ -3,7 +3,7 @@ import { useAuth, API_URL } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, ArrowLeft, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Aperture, Palette, Check, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Upload, ArrowLeft, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Aperture, Palette, Check, Sparkles, Image as ImageIcon, Pipette } from 'lucide-react';
 import axios from '../lib/axios';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { createPortal } from 'react-dom';
@@ -20,7 +20,7 @@ export default function PhotoEditor() {
     const { t } = useLanguage();
     const navigate = useNavigate();
 
-    const { selectedFile, setSelectedFile, preview, setPreview, result, setResult, jobId, setJobId, isProcessing, setIsProcessing, error, setError, progress, setProgress, model, setModel, device, setDevice, renderFactor, setRenderFactor, viewMode, setViewMode, isFullscreen, setIsFullscreen, resetState } = useEditorStore();
+    const { selectedFile, setSelectedFile, preview, setPreview, result, setResult, jobId, setJobId, isProcessing, setIsProcessing, error, setError, progress, setProgress, model, setModel, device, setDevice, renderFactor, setRenderFactor, viewMode, setViewMode, isFullscreen, setIsFullscreen, resetState, colorPreset, setColorPreset } = useEditorStore();
     useEffect(() => { resetState(); }, [resetState]);
 
     const handleFileSelect = (e) => {
@@ -43,7 +43,7 @@ export default function PhotoEditor() {
         try {
             const formData = new FormData();
             formData.append('file', selectedFile);
-            const response = await axios.post(`/jobs/process?type=COLORIZE&model=${model}&render_factor=${renderFactor}&device=${device}`, formData);
+            const response = await axios.post(`/jobs/process?type=COLORIZE&model=${model}&render_factor=${renderFactor}&device=${device}&color_preset=${colorPreset}`, formData);
             const job = response.data;
             if (job.status === 'COMPLETED') { setResult(`${API_URL}/${job.output_path.replace(/\\/g, '/')}`); setJobId(job.id); setIsProcessing(false); refreshUser(); }
             else if (job.status === 'FAILED') { setError(job.error_message || t('editor.processingFailed')); setIsProcessing(false); }
@@ -144,6 +144,39 @@ export default function PhotoEditor() {
                             </div>
                             <input type="range" min="10" max="45" value={renderFactor} onChange={(e) => setRenderFactor(parseInt(e.target.value))} className="w-full accent-accent h-2 bg-white/10 rounded-lg appearance-none cursor-pointer" disabled={isProcessing} />
                             <p className="text-xs text-muted mt-3">{t('editor.renderFactorDesc')}</p>
+                        </div>
+
+                        {/* Color Preset */}
+                        <div className="card group">
+                            <div className="relative">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 border border-accent/20 flex items-center justify-center"><Pipette className="w-4 h-4 text-accent" /></div>
+                                    <div><h2 className="text-base font-semibold">{t('editor.colorPreset')}</h2></div>
+                                </div>
+                                <div className="grid grid-cols-5 gap-1.5">
+                                    {[
+                                        { id: 'none',    label: t('editor.presetNone'),    dot: 'bg-white/20'                        },
+                                        { id: 'warm',    label: t('editor.presetWarm'),    dot: 'bg-orange-400'                      },
+                                        { id: 'cold',    label: t('editor.presetCold'),    dot: 'bg-blue-400'                        },
+                                        { id: 'vintage', label: t('editor.presetVintage'), dot: 'bg-amber-700'                       },
+                                        { id: 'vivid',   label: t('editor.presetVivid'),   dot: 'bg-gradient-to-br from-pink-500 to-purple-500' },
+                                    ].map((p) => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => setColorPreset(p.id)}
+                                            disabled={isProcessing}
+                                            className={`flex flex-col items-center gap-1.5 py-2 px-1 rounded-xl border transition-all duration-200 ${
+                                                colorPreset === p.id
+                                                    ? 'border-accent/60 bg-accent/10 shadow-lg shadow-accent/10'
+                                                    : 'border-white/5 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
+                                            }`}
+                                        >
+                                            <div className={`w-5 h-5 rounded-full ${p.dot} ring-2 ${colorPreset === p.id ? 'ring-accent/60' : 'ring-transparent'}`} />
+                                            <span className={`text-[9px] font-medium leading-tight text-center ${colorPreset === p.id ? 'text-accent' : 'text-muted'}`}>{p.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
 
                         <AnimatePresence>{error && <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="card p-4 bg-danger/10 border-danger/20"><p className="text-sm text-danger">{error}</p></motion.div>}</AnimatePresence>

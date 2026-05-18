@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import PhotoEditor from './pages/PhotoEditor';
 import VideoEditor from './pages/VideoEditor';
 import EnhancePage from './pages/EnhancePage';
+import BGRemovePage from './pages/BGRemovePage';
 
 import History from './pages/History';
 import Settings from './pages/Settings';
@@ -283,6 +284,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <EnhancePage initialMode="upscale" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/bg-remove"
+                  element={
+                    <ProtectedRoute>
+                      <BGRemovePage />
                     </ProtectedRoute>
                   }
                 />
