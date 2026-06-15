@@ -3,7 +3,8 @@ import { useAuth, API_URL } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, ArrowLeft, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Film, Check, Sparkles, AlertTriangle } from 'lucide-react';
+import { Upload, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Film, Check, Sparkles, AlertTriangle } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import axios from '../lib/axios';
 import VideoBeforeAfterSlider from '../components/VideoBeforeAfterSlider';
 import { createPortal } from 'react-dom';
@@ -79,13 +80,14 @@ export default function VideoEditor() {
             </div>
 
             <div className="relative z-10 p-6 lg:p-8">
-                <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-                    <button onClick={() => navigate('/')} className="group flex items-center gap-3 text-muted hover:text-foreground transition-all">
-                        <div className="w-10 h-10 rounded-xl bg-surface-elevated/50 backdrop-blur-sm border border-white/5 flex items-center justify-center group-hover:border-secondary/30 group-hover:bg-secondary/10 transition-all"><ArrowLeft className="w-4 h-4" /></div>
-                        <span className="font-medium">{t('nav.home')}</span>
-                    </button>
-                    <div className="flex items-center gap-2"><Film className="w-5 h-5 text-secondary" /><span className="font-display text-lg">{t('editor.videoTitle')}</span></div>
-                </motion.div>
+                <PageHeader
+                    icon={<Film className="w-6 h-6 text-secondary" />}
+                    title={t('editor.videoTitle')}
+                    subtitle={t('editor.aiModelDesc')}
+                    badge="AI"
+                    gradient="secondary"
+                    backLabel={t('nav.home')}
+                />
 
                 <div className="grid lg:grid-cols-12 gap-6 lg:gap-8">
                     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-4 xl:col-span-3 space-y-6">
@@ -164,14 +166,18 @@ export default function VideoEditor() {
                             ) : (
                                 <div className="relative flex-1 flex flex-col p-2 min-h-0">
                                     <FullscreenPortal isFullscreen={isFullscreen}>
-                                        <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black/30 backdrop-blur-sm flex items-center justify-center ${isFullscreen ? 'h-full rounded-none' : 'mb-4'}`}>
-                                            {result && (
-                                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="absolute top-4 right-4 z-20 flex gap-1 bg-black/60 backdrop-blur-xl p-1.5 rounded-xl border border-white/10 shadow-xl">
-                                                    <button onClick={() => setViewMode('slider')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'slider' ? 'bg-secondary text-white shadow-lg shadow-secondary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><Layout className="w-4 h-4" /></button>
-                                                    <button onClick={() => setViewMode('side-by-side')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'side-by-side' ? 'bg-secondary text-white shadow-lg shadow-secondary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><SplitSquareHorizontal className="w-4 h-4" /></button>
-                                                    <div className="w-px bg-white/10 mx-1" />
-                                                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2.5 rounded-lg text-muted hover:text-white hover:bg-white/10 transition-all">{isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</button>
-                                                </motion.div>
+                                        {result && !isFullscreen && (
+                                        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-1 mb-2">
+                                            <div className="flex gap-1 bg-white/[0.04] border border-white/10 p-1 rounded-xl">
+                                                <button onClick={() => setViewMode('slider')} title="Slider görünüm" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${viewMode === 'slider' ? 'bg-secondary text-white shadow-lg shadow-secondary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><Layout className="w-3.5 h-3.5" /> Slider</button>
+                                                <button onClick={() => setViewMode('side-by-side')} title="Yan yana görünüm" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${viewMode === 'side-by-side' ? 'bg-secondary text-white shadow-lg shadow-secondary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><SplitSquareHorizontal className="w-3.5 h-3.5" /> Yan Yana</button>
+                                            </div>
+                                            <button onClick={() => setIsFullscreen(true)} title="Tam ekran" className="p-2 rounded-xl bg-white/[0.04] border border-white/10 text-muted hover:text-white hover:bg-white/10 transition-all"><Maximize2 className="w-4 h-4" /></button>
+                                        </motion.div>
+                                    )}
+                                <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black/30 backdrop-blur-sm flex items-center justify-center ${isFullscreen ? 'h-full rounded-none' : 'mb-4'}`}>
+                                            {isFullscreen && (
+                                                <button onClick={() => setIsFullscreen(false)} className="absolute top-4 right-4 z-[100] p-2.5 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 text-muted hover:text-white transition-all"><Minimize2 className="w-4 h-4" /></button>
                                             )}
 
                                             {result ? (

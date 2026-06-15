@@ -177,14 +177,17 @@ def process_image_task(
     watermark: bool = False,
     resize: bool = False,
     enhance_mode: str = "auto",
-    scale: int = 2,
+    scale: int = 4,
     color_preset: str = "none",
     bg_type: str = "transparent",
     bg_color: str = None,
+    mask_path: str = None,
+    deblur_mode: str = "both",
+    deblur_strength: float = 1.0,
 ):
     """
     Celery task to process an image with progress updates.
-    Supports: COLORIZE (with color_preset), UPSCALE (scale 2/4/8), RESTORE, BG_REMOVE.
+    Supports: COLORIZE, UPSCALE, RESTORE, BG_REMOVE, DEBLUR, RESTORE_DAMAGE, INPAINT.
     """
     logger.info(f"Starting job {job_id} - Type: {job_type}")
 
@@ -234,6 +237,32 @@ def process_image_task(
                 output_path,
                 bg_type=bg_type,
                 bg_color=bg_color,
+                progress_callback=progress_callback,
+            )
+
+        elif job_type == "DEBLUR":
+            from services.deblur_service import deblur_image
+            processing_time = deblur_image(
+                input_path, output_path,
+                mode=deblur_mode,
+                strength=deblur_strength,
+                progress_callback=progress_callback,
+            )
+
+        elif job_type == "RESTORE_DAMAGE":
+            from services.damage_restore_service import restore_damaged_photo
+            processing_time = restore_damaged_photo(
+                input_path, output_path,
+                progress_callback=progress_callback,
+            )
+
+        elif job_type == "INPAINT":
+            from services.inpaint_service import inpaint_image
+            import os as _os
+            if not mask_path or not _os.path.exists(mask_path):
+                raise ValueError("Mask file missing for INPAINT job")
+            processing_time = inpaint_image(
+                input_path, mask_path, output_path,
                 progress_callback=progress_callback,
             )
 

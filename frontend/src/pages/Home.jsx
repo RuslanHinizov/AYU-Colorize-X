@@ -1,15 +1,25 @@
 import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
     Aperture, Film, Wand2, ArrowRight, Sparkles,
-    Github, Linkedin, Mail, Zap, Play
+    Github, Linkedin, Mail, Zap, Play,
+    Scissors, Eraser, Wrench, Clock, CheckCircle, XCircle, Loader2,
+    Image as ImageIcon, Video as VideoIcon,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, API_URL } from '../context/AuthContext';
+import axios from '../lib/axios';
 
 export default function Home() {
     const { t } = useLanguage();
     const { user } = useAuth();
+    const [recentJobs, setRecentJobs] = useState([]);
+
+    useEffect(() => {
+        if (!user) return;
+        axios.get('/jobs/?limit=3').then(r => setRecentJobs(r.data.slice(0, 3))).catch(() => {});
+    }, [user]);
 
     const colorClasses = {
         primary: {
@@ -29,6 +39,18 @@ export default function Home() {
             iconBg: 'from-accent/20 to-accent/5 border-accent/20',
             iconText: 'text-accent',
             linkText: 'text-accent',
+        },
+        success: {
+            glow: 'bg-success/20',
+            iconBg: 'from-success/20 to-success/5 border-success/20',
+            iconText: 'text-success',
+            linkText: 'text-success',
+        },
+        warning: {
+            glow: 'bg-warning/20',
+            iconBg: 'from-warning/20 to-warning/5 border-warning/20',
+            iconText: 'text-warning',
+            linkText: 'text-warning',
         },
     };
 
@@ -53,6 +75,27 @@ export default function Home() {
             icon: Wand2,
             path: '/enhance',
             color: 'accent',
+        },
+        {
+            title: t('bgRemove.title') || 'BG Remove',
+            description: t('bgRemove.subtitle') || 'Remove or replace image backgrounds instantly',
+            icon: Scissors,
+            path: '/bg-remove',
+            color: 'success',
+        },
+        {
+            title: t('inpaint.title') || 'Object Remover',
+            description: t('inpaint.canvasHint') || 'Paint over unwanted objects and AI removes them',
+            icon: Eraser,
+            path: '/inpaint',
+            color: 'warning',
+        },
+        {
+            title: t('damageRestore.title') || 'Photo Repair',
+            description: t('damageRestore.desc') || 'Repair tears, scratches and damage in old photos',
+            icon: Wrench,
+            path: '/damage-restore',
+            color: 'primary',
         },
     ];
 
@@ -204,57 +247,50 @@ export default function Home() {
                 </motion.div>
             </section>
 
-            {/* Features Section */}
-            <section className="relative py-24 px-6">
+            {/* Quick Tools Section */}
+            <section className="relative py-20 px-6">
                 <div className="max-w-6xl mx-auto">
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
-                        className="text-center mb-16"
+                        className="text-center mb-12"
                     >
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono uppercase tracking-widest text-muted/70 mb-4">
+                            <Zap className="w-3 h-3" /> {t('home.chooseToolTitle')}
+                        </span>
                         <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">
-                            {t('home.chooseToolTitle')}
-                        </h2>
-                        <p className="text-muted text-lg max-w-xl mx-auto">
                             {t('home.chooseToolSubtitle')}
-                        </p>
+                        </h2>
                     </motion.div>
 
-                    <div className="grid md:grid-cols-3 gap-6">
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
                         {features.map((feature, index) => (
                             <motion.div
                                 key={feature.path}
                                 initial={{ opacity: 0, y: 30 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
-                                transition={{ delay: index * 0.1 }}
+                                transition={{ delay: index * 0.07 }}
                             >
                                 <Link
                                     to={feature.path}
-                                    className="card group block h-full relative overflow-hidden"
+                                    className="card group block h-full relative overflow-hidden hover:-translate-y-1 transition-transform duration-300"
                                 >
-                                    {/* Hover Glow */}
-                                    <div className={`absolute -top-20 -right-20 w-40 h-40 ${colorClasses[feature.color].glow} rounded-full blur-[80px] opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-
+                                    <div className={`absolute -top-16 -right-16 w-32 h-32 ${colorClasses[feature.color].glow} rounded-full blur-[60px] opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
                                     <div className="relative">
-                                        {/* Icon */}
-                                        <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${colorClasses[feature.color].iconBg} flex items-center justify-center mb-6 group-hover:scale-110 group-hover:shadow-glow transition-all duration-300`}>
-                                            <feature.icon className={`w-7 h-7 ${colorClasses[feature.color].iconText}`} />
+                                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colorClasses[feature.color].iconBg} border flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300`}>
+                                            <feature.icon className={`w-5 h-5 ${colorClasses[feature.color].iconText}`} />
                                         </div>
-
-                                        {/* Content */}
-                                        <h3 className="font-display text-2xl font-bold mb-3 group-hover:text-gradient transition-all">
+                                        <h3 className="font-display text-lg font-bold mb-2 group-hover:text-gradient transition-all">
                                             {feature.title}
                                         </h3>
-                                        <p className="text-muted mb-6 leading-relaxed">
+                                        <p className="text-muted text-sm mb-5 leading-relaxed line-clamp-2">
                                             {feature.description}
                                         </p>
-
-                                        {/* Link */}
-                                        <div className={`flex items-center gap-2 ${colorClasses[feature.color].linkText} font-semibold`}>
+                                        <div className={`flex items-center gap-1.5 text-sm ${colorClasses[feature.color].linkText} font-semibold`}>
                                             <span>{t('home.startLink')}</span>
-                                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                                         </div>
                                     </div>
                                 </Link>
@@ -263,6 +299,62 @@ export default function Home() {
                     </div>
                 </div>
             </section>
+
+            {/* Recent Activity (logged-in only) */}
+            {user && recentJobs.length > 0 && (
+                <section className="relative py-12 px-6">
+                    <div className="max-w-6xl mx-auto">
+                        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/5 border border-secondary/20 flex items-center justify-center">
+                                        <Clock className="w-4 h-4 text-secondary" />
+                                    </div>
+                                    <h2 className="font-display text-xl font-bold">{t('history.title')}</h2>
+                                </div>
+                                <Link to="/history" className="text-xs text-muted/60 hover:text-primary transition-colors flex items-center gap-1 font-medium">
+                                    {t('history.all')} <ArrowRight className="w-3 h-3" />
+                                </Link>
+                            </div>
+                            <div className="grid sm:grid-cols-3 gap-4">
+                                {recentJobs.map((job, i) => (
+                                    <motion.div key={job.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }} className="card !p-3 group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-14 h-14 rounded-xl overflow-hidden bg-black/20 shrink-0">
+                                                {job.output_path && job.status === 'COMPLETED' ? (
+                                                    job.type === 'VIDEO_COLORIZE'
+                                                        ? <VideoIcon className="w-full h-full p-4 text-secondary" />
+                                                        : <img src={`${API_URL}/${job.output_path.replace(/\\/g, '/')}`} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center">
+                                                        {job.status === 'PROCESSING'
+                                                            ? <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                                                            : <XCircle className="w-5 h-5 text-danger" />}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 mb-1">
+                                                    <span className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full border
+                                                        ${job.type === 'BG_REMOVE' ? 'bg-success/15 text-success border-success/25' :
+                                                          job.type === 'VIDEO_COLORIZE' ? 'bg-secondary/15 text-secondary border-secondary/25' :
+                                                          'bg-primary/15 text-primary border-primary/25'}`}>
+                                                        {job.type?.replace('_', ' ')}
+                                                    </span>
+                                                    {job.status === 'COMPLETED' && <CheckCircle className="w-3 h-3 text-success" />}
+                                                </div>
+                                                <p className="text-xs text-muted truncate">
+                                                    {new Date(job.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                </section>
+            )}
 
             {/* Team Section */}
             <section className="relative py-24 px-6">

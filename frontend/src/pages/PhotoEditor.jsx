@@ -3,7 +3,9 @@ import { useAuth, API_URL } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, ArrowLeft, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Aperture, Palette, Check, Sparkles, Image as ImageIcon, Pipette } from 'lucide-react';
+import { Upload, Download, Sliders, Cpu, Zap, Layout, SplitSquareHorizontal, Maximize2, Minimize2, Lock, Aperture, Palette, Check, Sparkles, Image as ImageIcon, Pipette } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import DownloadButton from '../components/DownloadButton';
 import axios from '../lib/axios';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { createPortal } from 'react-dom';
@@ -84,13 +86,14 @@ export default function PhotoEditor() {
             </div>
 
             <div className="relative z-10 p-6 lg:p-8">
-                <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-                    <button onClick={() => navigate('/')} className="group flex items-center gap-3 text-muted hover:text-foreground transition-all">
-                        <div className="w-10 h-10 rounded-xl bg-surface-elevated/50 backdrop-blur-sm border border-white/5 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/10 transition-all"><ArrowLeft className="w-4 h-4" /></div>
-                        <span className="font-medium">{t('nav.home')}</span>
-                    </button>
-                    <div className="flex items-center gap-2"><Aperture className="w-5 h-5 text-primary" /><span className="font-display text-lg">{t('editor.photoTitle')}</span></div>
-                </motion.div>
+                <PageHeader
+                    icon={<Aperture className="w-6 h-6 text-primary" />}
+                    title={t('editor.photoTitle')}
+                    subtitle={t('editor.aiModelDesc')}
+                    badge="AI"
+                    gradient="primary"
+                    backLabel={t('nav.home')}
+                />
 
                 <div className="grid lg:grid-cols-12 gap-6 lg:gap-8">
                     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-4 xl:col-span-3 space-y-6">
@@ -212,7 +215,7 @@ export default function PhotoEditor() {
                                             )}
 
                                             {result ? (
-                                                viewMode === 'slider' ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} /></div> : (
+                                                viewMode === 'slider' ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} avoidTopRightControls /></div> : (
                                                     <div className="grid grid-cols-2 gap-3 w-full p-3 items-center h-full overflow-auto">
                                                         <div className="relative"><span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.original')}</span><img src={preview} alt="Original" className="w-full h-auto rounded-xl shadow-2xl" /></div>
                                                         <div className="relative"><span className="absolute top-3 left-3 bg-gradient-to-r from-primary to-secondary px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.colorized')}</span><img src={result} alt="Colorized" className="w-full h-auto rounded-xl shadow-2xl ring-2 ring-primary/20" /></div>
@@ -240,7 +243,7 @@ export default function PhotoEditor() {
                                             {!result ? (
                                                 <button onClick={handleProcess} disabled={isProcessing} className="btn-primary flex-[2] flex items-center justify-center gap-2"><Zap className="w-4 h-4" />{t('editor.startProcessing')}</button>
                                             ) : (
-                                                <button onClick={handleDownload} className="btn-primary flex-[2] flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, rgb(34, 197, 94), rgb(16, 185, 129))' }}><Download className="w-4 h-4" />{t('editor.downloadResult')}</button>
+                                                <div className="flex-[2]"><DownloadButton jobId={jobId} filename={`colorized_${jobId}`} /></div>
                                             )}
                                         </div>
                                     )}

@@ -124,7 +124,9 @@ export default function BeforeAfterSlider({
             <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 border border-white/10">
                 {resolvedBeforeLabel}
             </div>
-            <div className={`absolute ${avoidTopRightControls ? 'top-20 right-4' : 'top-4 right-4'} bg-gradient-to-r from-primary to-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 shadow-lg`}>
+            {/* avoidTopRightControls: true -> etiket asagi iner (genis kontrol grubu olan
+                sayfalar); 'beside' -> tek tam-ekran dugmesinin soluna, yan yana gecer */}
+            <div className={`absolute ${avoidTopRightControls === 'beside' ? 'top-4 right-16' : avoidTopRightControls ? 'top-20 right-4' : 'top-4 right-4'} bg-gradient-to-r from-primary to-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold pointer-events-none z-20 shadow-lg`}>
                 {resolvedAfterLabel}
             </div>
         </div>

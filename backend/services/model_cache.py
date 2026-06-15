@@ -15,6 +15,19 @@ import tempfile
 
 logger = logging.getLogger(__name__)
 
+def _get_models_dir() -> Path:
+    """Return AI models directory — respects AI_MODELS_DIR setting/env var."""
+    try:
+        from config import settings
+        if settings.AI_MODELS_DIR:
+            return Path(settings.AI_MODELS_DIR)
+    except Exception:
+        pass
+    env_val = os.getenv("AI_MODELS_DIR", "")
+    if env_val:
+        return Path(env_val)
+    return Path(__file__).parent.parent / "ai_models"
+
 # Add DDColor repo to path for model imports
 _ddcolor_repo_path = str(Path(__file__).parent.parent / "ddcolor_repo")
 if _ddcolor_repo_path not in sys.path:
@@ -82,8 +95,8 @@ class ModelCache:
             _prefer_ddcolor_basicsr()
             from ddcolor import DDColor, ColorizationPipeline, build_ddcolor_model
 
-            # Model paths
-            models_dir = Path("ai_models")
+            # Model paths — respects AI_MODELS_DIR from settings/.env
+            models_dir = _get_models_dir()
             if model_name.lower() in ("modelscope", "stable"):
                 model_path = models_dir / "ddcolor_modelscope.pth"
             else:
@@ -197,8 +210,8 @@ class ModelCache:
                 logger.exception("DeOldify could not be imported for video colorization: %s", exc)
                 return None
 
-            # Model path
-            models_dir = Path("ai_models")
+            # Model path — respects AI_MODELS_DIR from settings/.env
+            models_dir = _get_models_dir()
             video_model_path = models_dir / "ColorizeVideo_gen.pth"
 
             if not video_model_path.exists():
@@ -211,33 +224,29 @@ class ModelCache:
             device = self.get_device(device_name)
             if device.type == 'cpu':
                 torch.backends.cudnn.enabled = False
+            else:
+                torch.backends.cudnn.enabled = True
 
             # PyTorch 2.6+ changed default weights_only=True which breaks deoldify/fastai.
-            # Patch torch.load: disable weights_only AND always map to CPU so that
-            # the deoldify model loads cleanly regardless of what device it was saved on.
-            # fastai will call .to(device) on the model afterward.
+            # Load to CPU first (avoids serialization issues), then move to target device.
             _original_torch_load = torch.load
             def _patched_torch_load(f, map_location=None, pickle_module=None, **kwargs):
                 kwargs['weights_only'] = False
-                # Always load to CPU first to avoid CUDA device serialization issues
-                safe_map_location = 'cpu'
                 if pickle_module is not None:
-                    return _original_torch_load(f, map_location=safe_map_location, pickle_module=pickle_module, **kwargs)
-                return _original_torch_load(f, map_location=safe_map_location, **kwargs)
+                    return _original_torch_load(f, map_location='cpu', pickle_module=pickle_module, **kwargs)
+                return _original_torch_load(f, map_location='cpu', **kwargs)
             torch.load = _patched_torch_load
 
+            # Set fastai default device BEFORE loading — fastai moves model to this device
             try:
                 from fastai.torch_core import defaults
                 defaults.device = device
-            except Exception:
-                pass
+                logger.info(f"FastAI default device set to: {device}")
+            except Exception as e:
+                logger.warning(f"Could not set fastai default device: {e}")
 
-            # Patch FastAI purge() — on Windows, purge() saves attrs to a temp file,
-            # deletes them, reloads from temp file, then tries to os.remove() the file
-            # while it's still open (PermissionError / WinError 32). When the remove
-            # fails, attrs are never restored and self.path becomes None, crashing load().
-            # Fix: make purge() a no-op. It only exists to free GPU memory; on CPU it
-            # is completely unnecessary.
+            # Patch FastAI purge() — on Windows, purge() causes PermissionError (WinError 32)
+            # when it tries to remove a temp file while it's still open. Make it a no-op.
             try:
                 import fastai.basic_train as _fbt
                 _fbt.Learner.purge = lambda self_learner, *a, **kw: self_learner
@@ -250,6 +259,8 @@ class ModelCache:
                     root_folder=runtime_root,
                     weights_name=video_model_path.stem,
                 )
+                # fastai defaults.device was already set before loading,
+                # so the model is on the correct device automatically.
             finally:
                 torch.load = _original_torch_load  # Always restore original torch.load
 

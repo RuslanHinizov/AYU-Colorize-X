@@ -281,7 +281,16 @@ def colorize_video(
                 _ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
             if not _ffmpeg_exe:
                 raise RuntimeError("ffmpeg executable not found")
-            # Patch ffmpeg-python
+
+            # Add ffmpeg binary's directory to PATH so DeOldify's os.system('ffmpeg ...')
+            # calls find it. Also add backend dir so ffmpeg.bat wrapper is found on Windows.
+            _ffmpeg_dir = str(Path(_ffmpeg_exe).parent)
+            _backend_dir = str(Path(__file__).parent.parent)
+            for _d in (_ffmpeg_dir, _backend_dir):
+                if _d not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
+
+            # Patch ffmpeg-python library's compile so it uses the same exe
             _orig_compile = _ffmpeg_run.compile
             def _patched_compile(stream_spec, cmd='ffmpeg', overwrite_output=False):
                 if cmd == 'ffmpeg':
@@ -414,19 +423,22 @@ def colorize_video(
 def _upscale_with_realesrgan_or_resize(
     input_path: str,
     output_path: str,
-    scale: int = 2,
+    scale: int = 4,
     device: str = "cpu",
     progress_callback=None
 ) -> float:
     """
     Upscale using Real-ESRGAN.
-    scale=8 is achieved by chaining two 4x passes (4x → temp → 4x).
-    Input is capped at 512x512 for 8x to avoid memory exhaustion.
+    Supported scales:
+      4x  — single Real-ESRGAN 4x pass (true 4x)
+      8x  — single Real-ESRGAN 4x pass → PIL resize to exactly 8x of original (true 8x)
+      16x — two chained Real-ESRGAN 4x passes (true 16x)
+    Input is capped at 512x512 for 16x to avoid memory exhaustion.
     """
     start_time = time.time()
 
-    # For 8x: cap input resolution to avoid OOM
-    if scale == 8:
+    # For 16x: cap input resolution to avoid OOM
+    if scale == 16:
         try:
             from PIL import Image
             with Image.open(input_path) as img:
@@ -437,9 +449,9 @@ def _upscale_with_realesrgan_or_resize(
                     new_h = int(h * ratio)
                     img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
                     img.save(input_path)
-                    logger.info(f"8x upscale: capped input from {w}x{h} to {new_w}x{new_h}")
+                    logger.info(f"16x upscale: capped input from {w}x{h} to {new_w}x{new_h}")
         except Exception as e:
-            logger.warning(f"Failed to cap input for 8x: {e}")
+            logger.warning(f"Failed to cap input for 16x: {e}")
 
     try:
         from services.restoration_engine import upscale_realesrgan, get_device
@@ -450,34 +462,80 @@ def _upscale_with_realesrgan_or_resize(
         logger.info(f"Starting upscale {scale}x on device: {device}")
         torch_device = get_device(device)
 
-        if scale == 8:
-            # Chain: 4x → temp file → 4x
+        if scale == 16:
+            # True 16x: chain two Real-ESRGAN 4x passes (4x → 4x = 16x)
             image = cv2.imread(input_path)
             if image is None:
                 raise ValueError(f"Could not load image: {input_path}")
+            orig_w, orig_h = image.shape[1], image.shape[0]
 
             if progress_callback:
                 progress_callback(20)
 
-            # First pass: 4x
+            # First 4x pass
             result_4x = upscale_realesrgan(image, torch_device, scale=4)
 
             if progress_callback:
                 progress_callback(55)
 
-            # Second pass: 4x again (= 16x total but from capped input ≈ 8x from original)
-            result_8x = upscale_realesrgan(result_4x, torch_device, scale=4)
+            # Second 4x pass → 16x total
+            result_16x = upscale_realesrgan(result_4x, torch_device, scale=4)
 
             if progress_callback:
                 progress_callback(85)
 
-            cv2.imwrite(output_path, result_8x)
+            cv2.imwrite(output_path, result_16x)
             logger.info(
-                f"8x upscale: {image.shape[1]}x{image.shape[0]} → "
+                f"16x upscale: {orig_w}x{orig_h} → "
                 f"{result_4x.shape[1]}x{result_4x.shape[0]} → "
-                f"{result_8x.shape[1]}x{result_8x.shape[0]}"
+                f"{result_16x.shape[1]}x{result_16x.shape[0]}"
             )
+
+        elif scale == 8:
+            # True 8x: 4x Real-ESRGAN pass, then PIL resize to exactly 8x of original
+            from PIL import Image as PILImage
+
+            with PILImage.open(input_path) as pil_img:
+                orig_w, orig_h = pil_img.size
+
+            image = cv2.imread(input_path)
+            if image is None:
+                raise ValueError(f"Could not load image: {input_path}")
+
+            if progress_callback:
+                progress_callback(25)
+
+            # Single 4x Real-ESRGAN pass (high quality upscale)
+            result_4x = upscale_realesrgan(image, torch_device, scale=4)
+
+            if progress_callback:
+                progress_callback(70)
+
+            # Resize from 4x output to exactly 8x of original using LANCZOS
+            target_w, target_h = orig_w * 8, orig_h * 8
+            result_4x_rgb = cv2.cvtColor(result_4x, cv2.COLOR_BGR2RGB)
+            pil_4x = PILImage.fromarray(result_4x_rgb)
+            pil_8x = pil_4x.resize((target_w, target_h), PILImage.Resampling.LANCZOS)
+            result_8x_rgb = cv2.cvtColor(
+                cv2.resize(cv2.cvtColor(
+                    cv2.cvtColor(result_4x, cv2.COLOR_BGR2RGB), cv2.COLOR_RGB2BGR
+                ), (target_w, target_h), interpolation=cv2.INTER_LANCZOS4),
+                cv2.COLOR_BGR2BGR
+            )
+            # Use PIL save for better quality
+            pil_8x.save(output_path, quality=95)
+
+            if progress_callback:
+                progress_callback(90)
+
+            logger.info(
+                f"8x upscale: {orig_w}x{orig_h} → (4x ESRGAN) → "
+                f"{result_4x.shape[1]}x{result_4x.shape[0]} → (resize) → "
+                f"{target_w}x{target_h}"
+            )
+
         else:
+            # 4x (or any other) — single Real-ESRGAN pass
             image = cv2.imread(input_path)
             if image is None:
                 raise ValueError(f"Could not load image: {input_path}")
@@ -491,14 +549,14 @@ def _upscale_with_realesrgan_or_resize(
                 progress_callback(80)
 
             cv2.imwrite(output_path, result)
-            logger.info(f"Upscaled from {image.shape[1]}x{image.shape[0]} to {result.shape[1]}x{result.shape[0]}")
+            logger.info(f"Upscaled {scale}x: {image.shape[1]}x{image.shape[0]} → {result.shape[1]}x{result.shape[0]}")
 
         if progress_callback:
             progress_callback(95)
 
     except Exception as exc:
         logger.exception("Real-ESRGAN upscale failed; using fallback resize: %s", exc)
-        # Fallback to simple resize
+        # Fallback to simple PIL resize
         try:
             from PIL import Image
             with Image.open(input_path) as img:

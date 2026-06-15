@@ -12,6 +12,8 @@ import PhotoEditor from './pages/PhotoEditor';
 import VideoEditor from './pages/VideoEditor';
 import EnhancePage from './pages/EnhancePage';
 import BGRemovePage from './pages/BGRemovePage';
+import InpaintPage from './pages/InpaintPage';
+import DamageRestorePage from './pages/DamageRestorePage';
 
 import History from './pages/History';
 import Settings from './pages/Settings';
@@ -292,6 +294,22 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <BGRemovePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inpaint"
+                  element={
+                    <ProtectedRoute>
+                      <InpaintPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/damage-restore"
+                  element={
+                    <ProtectedRoute>
+                      <DamageRestorePage />
                     </ProtectedRoute>
                   }
                 />

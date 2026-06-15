@@ -1,3 +1,29 @@
+# Load .env into os.environ BEFORE any module reads env vars.
+# pydantic-settings reads .env into its own dict but does NOT populate os.environ,
+# so modules that call os.environ.get("USE_SDXL") etc. miss the values otherwise.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    import pathlib as _pathlib
+    _load_dotenv(_pathlib.Path(__file__).parent / ".env", override=False)
+except Exception:
+    pass
+
+# Pre-import pyarrow from a neutral CWD so that its internal _fill_cache
+# doesn't encounter the Windows reparse-point in the backend directory.
+# This must happen before any sys.path entry points to backend/.
+import os as _os, tempfile as _tempfile
+_startup_cwd = _os.getcwd()
+try:
+    _os.chdir(_tempfile.gettempdir())
+    import pyarrow as _pyarrow  # noqa: F401
+except Exception:
+    pass
+finally:
+    try:
+        _os.chdir(_startup_cwd)
+    except Exception:
+        pass
+
 # Apply torch.load patch - force CPU when CUDA not available
 import torch
 import torch.serialization

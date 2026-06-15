@@ -1,3 +1,18 @@
+# Pre-import pyarrow before backend paths enter sys.path (avoids WinError 6714
+# when pyarrow._fill_cache scans the backend directory's reparse point).
+import os as _os, tempfile as _tempfile
+_cwd0 = _os.getcwd()
+try:
+    _os.chdir(_tempfile.gettempdir())
+    import pyarrow as _pyarrow  # noqa: F401
+except Exception:
+    pass
+finally:
+    try:
+        _os.chdir(_cwd0)
+    except Exception:
+        pass
+
 from celery import Celery
 from config import settings
 

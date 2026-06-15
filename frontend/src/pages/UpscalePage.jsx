@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Check, Cpu, Download, ImagePlus, Lock, Maximize2, Sparkles, Upload, Zap, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, Cpu, Download, ImagePlus, Lock, Maximize2, Minimize2, Layout, SplitSquareHorizontal, Sparkles, Upload, X, Zap, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { useJobProcessing } from '../hooks/useJobProcessing';
@@ -19,10 +19,10 @@ export default function UpscalePage() {
     const {
         setSelectedFile, preview, setPreview, result, setResult, setJobId,
         isProcessing, error, setError, progress, device, setDevice, isFullscreen, setIsFullscreen,
-        resetState, upscaleScale, setUpscaleScale,
+        viewMode, setViewMode, resetState, upscaleScale, setUpscaleScale,
     } = useEditorStore();
 
-    const { processJob: handleProcess, downloadJob: handleDownload } = useJobProcessing({
+    const { processJob: handleProcess, downloadJob: handleDownload, cancelJob: handleCancel } = useJobProcessing({
         jobType: 'UPSCALE',
         getParams: () => ({ device, scale: upscaleScale }),
         downloadName: (id) => `upscaled_${id}.jpg`,
@@ -159,9 +159,21 @@ export default function UpscalePage() {
                                     <FullscreenPortal isFullscreen={isFullscreen}>
                                         <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black/30 backdrop-blur-sm flex items-center justify-center ${isFullscreen ? 'h-full rounded-none' : 'mb-4'}`}>
                                             {result && (
-                                                <button onClick={() => setIsFullscreen(!isFullscreen)} className="absolute top-4 right-4 z-20 p-2.5 rounded-lg bg-black/60 text-muted hover:text-white hover:bg-white/10 transition-all"><Maximize2 className="w-4 h-4" /></button>
+                                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="absolute top-4 right-4 z-20 flex gap-1 bg-black/60 backdrop-blur-xl p-1.5 rounded-xl border border-white/10 shadow-xl">
+                                                    <button onClick={() => setViewMode('side-by-side')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'side-by-side' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><Layout className="w-4 h-4" /></button>
+                                                    <button onClick={() => setViewMode('slider')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'slider' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><SplitSquareHorizontal className="w-4 h-4" /></button>
+                                                    <div className="w-px bg-white/10 mx-1" />
+                                                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2.5 rounded-lg text-muted hover:text-white hover:bg-white/10 transition-all">{isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</button>
+                                                </motion.div>
                                             )}
-                                            {result ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} /></div> : <img src={preview} alt="Preview" className="max-h-full w-full object-contain opacity-60" />}
+                                            {result ? (
+                                                viewMode === 'slider' ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} avoidTopRightControls /></div> : (
+                                                    <div className="grid grid-cols-2 gap-3 w-full p-3 items-center h-full overflow-auto">
+                                                        <div className="relative"><span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.original')}</span><img src={preview} alt="Original" className="w-full h-auto rounded-xl shadow-2xl" /></div>
+                                                        <div className="relative"><span className="absolute top-3 left-3 bg-gradient-to-r from-primary to-accent px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.colorized')}</span><img src={result} alt="Result" className="w-full h-auto rounded-xl shadow-2xl ring-2 ring-accent/20" /></div>
+                                                    </div>
+                                                )
+                                            ) : <img src={preview} alt="Preview" className="max-h-full w-full object-contain opacity-60" />}
                                             <AnimatePresence>
                                                 {isProcessing && (
                                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-background/80 backdrop-blur-xl flex flex-col items-center justify-center z-30">
@@ -169,6 +181,7 @@ export default function UpscalePage() {
                                                         <h3 className="text-2xl font-display font-semibold mb-2 text-gradient">{t('upscale.processingTitle')}</h3>
                                                         <div className="w-64 h-2 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm"><motion.div className="h-full bg-gradient-to-r from-primary via-secondary to-accent rounded-full" initial={{ width: 0 }} animate={{ width: `${progress}%` }} /></div>
                                                         <p className="text-sm font-mono text-primary mt-3">{progress}%</p>
+                                                        <button onClick={handleCancel} className="mt-6 flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-danger/20 hover:border-danger/40 text-muted hover:text-danger transition-all text-sm"><X className="w-4 h-4" />İptal Et</button>
                                                     </motion.div>
                                                 )}
                                             </AnimatePresence>

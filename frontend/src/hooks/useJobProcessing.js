@@ -3,6 +3,7 @@ import { API_URL, useAuth } from '../context/AuthContext';
 import axios from '../lib/axios';
 import { useEditorStore } from '../store/editorStore';
 import { wsManager } from '../lib/websocket';
+import { useLanguage } from '../context/LanguageContext';
 
 function buildResultUrl(outputPath) {
     return `${API_URL}/${outputPath.replace(/\\/g, '/')}`;
@@ -21,6 +22,7 @@ function startBlobDownload(blob, filename) {
 
 export function useJobProcessing({ jobType, getParams, downloadName, onLimitExceeded }) {
     const { refreshUser } = useAuth();
+    const { t } = useLanguage();
     const {
         selectedFile,
         setResult,
@@ -53,9 +55,9 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
 
     const failJob = useCallback((message) => {
         cleanupWatchers();
-        setError(message || 'Islem basarisiz');
+        setError(message || t('editor.processingFailed'));
         setIsProcessing(false);
-    }, [cleanupWatchers, setError, setIsProcessing]);
+    }, [cleanupWatchers, setError, setIsProcessing, t]);
 
     const watchJob = useCallback((id) => {
         cleanupWatchers();
@@ -70,10 +72,10 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
                 if (job.status === 'COMPLETED') {
                     finishJob(job);
                 } else if (job.status === 'FAILED') {
-                    failJob(job.error_message || 'Islem basarisiz');
+                    failJob(job.error_message || t('editor.processingFailed'));
                 }
             } catch {
-                failJob('Durum kontrolu basarisiz');
+                failJob(t('editor.statusCheckFailed'));
             }
         }, 2000);
 
@@ -83,7 +85,7 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
                 id,
                 (progress) => setProgress(progress),
                 (outputPath, processingTime) => finishJob({ id, output_path: outputPath, processing_time: processingTime }),
-                (error) => failJob(error || 'Islem basarisiz'),
+                (error) => failJob(error || t('editor.processingFailed')),
             );
         }
 
@@ -111,7 +113,7 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
             if (job.status === 'COMPLETED') {
                 finishJob(job);
             } else if (job.status === 'FAILED') {
-                failJob(job.error_message || 'Islem basarisiz');
+                failJob(job.error_message || t('editor.processingFailed'));
             } else {
                 setJobId(job.id);
                 watchJob(job.id);
@@ -122,7 +124,7 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
                 setIsProcessing(false);
                 return;
             }
-            setError(typeof detail === 'string' ? detail : 'Islem basarisiz');
+            setError(typeof detail === 'string' ? detail : t('editor.processingFailed'));
             setIsProcessing(false);
         }
     }, [
@@ -146,5 +148,18 @@ export function useJobProcessing({ jobType, getParams, downloadName, onLimitExce
         startBlobDownload(new Blob([response.data]), downloadName?.(jobId) || `processed_${jobId}`);
     }, [downloadName, jobId]);
 
-    return { processJob, downloadJob };
+    const cancelJob = useCallback(async () => {
+        const id = jobId;
+        if (!id) return;
+        cleanupWatchers();
+        setIsProcessing(false);
+        setProgress(0);
+        try {
+            await axios.post(`/jobs/${id}/cancel`);
+        } catch {
+            // Job may have already finished — that's fine
+        }
+    }, [cleanupWatchers, jobId, setIsProcessing, setProgress]);
+
+    return { processJob, downloadJob, cancelJob, jobId };
 }

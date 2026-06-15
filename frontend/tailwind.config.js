@@ -19,6 +19,7 @@ export default {
         border: 'rgb(var(--color-border) / <alpha-value>)',
         danger: 'rgb(var(--color-danger) / <alpha-value>)',
         success: 'rgb(var(--color-success) / <alpha-value>)',
+        warning: '#f59e0b',
       },
       fontFamily: {
         sans: ['Outfit', 'system-ui', 'sans-serif'],

@@ -16,12 +16,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-MAX_IMAGE_PIXELS = 36_000_000
-MAX_VIDEO_DURATION_SECONDS = 180
-MAX_VIDEO_WIDTH = 1920
-MAX_VIDEO_HEIGHT = 1080
-MAX_VIDEO_FPS = 60
+MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB — effectively no limit
 
 
 def _is_image(file_ext: str) -> bool:
@@ -44,15 +39,13 @@ def _validate_content_type(upload_file: UploadFile, file_ext: str) -> None:
 
 def _validate_image_file(file_path: Path) -> None:
     try:
-        Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+        Image.MAX_IMAGE_PIXELS = None  # disable DecompressionBomb check — no limits
         with Image.open(file_path) as img:
             img.verify()
         with Image.open(file_path) as img:
             width, height = img.size
             if width <= 0 or height <= 0:
                 raise ValueError("Invalid image dimensions")
-            if width * height > MAX_IMAGE_PIXELS:
-                raise ValueError("Image resolution is too large")
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("Invalid or corrupted image file") from exc
 
@@ -64,18 +57,10 @@ def _validate_video_file(file_path: Path) -> None:
             raise ValueError("Invalid or corrupted video file")
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
         frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-        duration = frames / fps if fps > 0 else 0
-
         if width <= 0 or height <= 0 or frames <= 0:
             raise ValueError("Invalid video metadata")
-        if width > MAX_VIDEO_WIDTH or height > MAX_VIDEO_HEIGHT:
-            raise ValueError(f"Video resolution exceeds {MAX_VIDEO_WIDTH}x{MAX_VIDEO_HEIGHT}")
-        if fps > MAX_VIDEO_FPS:
-            raise ValueError(f"Video FPS exceeds {MAX_VIDEO_FPS}")
-        if duration > MAX_VIDEO_DURATION_SECONDS:
-            raise ValueError(f"Video duration exceeds {MAX_VIDEO_DURATION_SECONDS} seconds")
+        # No resolution / duration / FPS limits
     finally:
         cap.release()
 

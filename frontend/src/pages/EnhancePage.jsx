@@ -3,7 +3,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    ArrowLeft,
+    AlertTriangle,
     Download,
     Layout,
     Maximize2,
@@ -14,6 +14,8 @@ import {
     Wand2,
     Zap,
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import DownloadButton from '../components/DownloadButton';
 import { createPortal } from 'react-dom';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { useJobProcessing } from '../hooks/useJobProcessing';
@@ -76,7 +78,7 @@ export default function EnhancePage({ initialMode = 'restore' }) {
         [selectedMode, ENHANCE_MODES],
     );
 
-    const { processJob: handleProcess, downloadJob: handleDownload } = useJobProcessing({
+    const { processJob: handleProcess, downloadJob: handleDownload, jobId } = useJobProcessing({
         jobType: mode.jobType,
         getParams: () => ({
             device: 'cpu',
@@ -132,18 +134,14 @@ export default function EnhancePage({ initialMode = 'restore' }) {
             </div>
 
             <div className="relative z-10 p-6 lg:p-8">
-                <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-                    <button onClick={() => navigate('/')} className="group flex items-center gap-3 text-muted hover:text-foreground transition-all">
-                        <div className="w-10 h-10 rounded-xl bg-surface-elevated/50 backdrop-blur-sm border border-white/5 flex items-center justify-center group-hover:border-accent/30 group-hover:bg-accent/10 transition-all">
-                            <ArrowLeft className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">{t('nav.home')}</span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-accent" />
-                        <span className="font-display text-lg">AI Enhance</span>
-                    </div>
-                </motion.div>
+                <PageHeader
+                    icon={<Sparkles className="w-6 h-6 text-accent" />}
+                    title="AI Enhance"
+                    subtitle="CodeFormer + Real-ESRGAN"
+                    badge="AI"
+                    gradient="accent"
+                    backLabel={t('nav.home')}
+                />
 
                 <div className="grid lg:grid-cols-12 gap-6 lg:gap-8">
                     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-4 xl:col-span-3 space-y-6">
@@ -196,20 +194,35 @@ export default function EnhancePage({ initialMode = 'restore' }) {
                                     <div className="mt-4 pt-4 border-t border-white/5">
                                         <h2 className="text-sm font-semibold mb-3 text-muted">{t('enhance.scaleLabel')}</h2>
                                         <div className="flex gap-2">
-                                            {[2, 4].map((s) => (
+                                            {[4, 8, 16].map((s) => (
                                                 <button
                                                     key={s}
                                                     onClick={() => setUpscaleScale(s)}
                                                     disabled={isProcessing}
                                                     className={`flex-1 py-2.5 rounded-xl border text-sm font-bold transition-all ${upscaleScale === s ? 'border-primary/50 bg-primary/10 text-primary shadow-lg shadow-primary/5' : 'border-white/5 bg-white/[0.02] text-muted hover:border-white/10'}`}
                                                 >
-                                                    {s}x
+                                                    {s}×
                                                 </button>
                                             ))}
                                         </div>
                                         <p className="text-xs text-muted mt-2">
-                                            {upscaleScale === 4 ? t('enhance.scale4xDesc') : t('enhance.scale2xDesc')}
+                                            {upscaleScale === 16 ? t('enhance.scale16xDesc') : upscaleScale === 8 ? t('enhance.scale8xDesc') : t('enhance.scale4xDesc')}
                                         </p>
+                                        <AnimatePresence>
+                                            {upscaleScale >= 8 && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                    exit={{ opacity: 0, height: 0 }}
+                                                    className="mt-3 p-3 rounded-xl bg-warning/10 border border-warning/30 flex items-start gap-2"
+                                                >
+                                                    <AlertTriangle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
+                                                    <p className="text-xs text-warning leading-relaxed">
+                                                        {upscaleScale === 16 ? t('enhance.scale16xWarning') : t('enhance.scale8xWarning')}
+                                                    </p>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
                                     </div>
                                 )}
                             </div>
@@ -326,10 +339,7 @@ export default function EnhancePage({ initialMode = 'restore' }) {
                                                     {mode.title}
                                                 </button>
                                             ) : (
-                                                <button onClick={handleDownload} className="btn-primary flex-[2] flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, rgb(34, 197, 94), rgb(16, 185, 129))' }}>
-                                                    <Download className="w-4 h-4" />
-                                                    {t('editor.downloadResult')}
-                                                </button>
+                                                <div className="flex-[2]"><DownloadButton jobId={jobId} filename={`enhanced_${jobId}`} /></div>
                                             )}
                                         </div>
                                     )}

@@ -4,10 +4,37 @@ Uses rembg (U2Net model) to remove backgrounds from images.
 Supports: transparent PNG output, solid color replacement, white/black background.
 """
 import logging
+import os
 import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _enable_onnx_cuda_dlls() -> None:
+    """rembg'in (onnxruntime) CUDA/cuDNN 9 saglayicisini bulabilmesi icin
+    nvidia pip paketlerinin DLL dizinlerini Windows DLL arama yoluna ekler.
+    Bulunamazsa rembg sorunsuzca CPU'ya duser."""
+    try:
+        import nvidia
+        nv = Path(nvidia.__file__).parent
+        for sub in ("cudnn", "cublas", "cuda_runtime", "cuda_nvrtc", "cufft", "curand"):
+            bin_dir = nv / sub / "bin"
+            if bin_dir.is_dir():
+                # add_dll_directory: Python'un kendi yuklemesi icin
+                if hasattr(os, "add_dll_directory"):
+                    try:
+                        os.add_dll_directory(str(bin_dir))
+                    except OSError:
+                        pass
+                # PATH: onnxruntime'in native LoadLibrary bagimlilik cozumu icin (sart)
+                os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+    except Exception:
+        pass
+
+
+# rembg import edilmeden once CUDA DLL yollarini hazirla
+_enable_onnx_cuda_dlls()
 
 
 def remove_background(

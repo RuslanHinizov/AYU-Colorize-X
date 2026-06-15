@@ -497,8 +497,8 @@ async def get_system_resources(
     if torch.cuda.is_available():
         gpu_stats = [{
             "name": torch.cuda.get_device_name(0),
-            "memory_used": torch.cuda.memory_allocated(0),
-            "memory_total": torch.cuda.get_device_properties(0).total_memory,
+            "memory_used": round(torch.cuda.memory_allocated(0) / 1024 ** 2, 1),
+            "memory_total": round(torch.cuda.get_device_properties(0).total_memory / 1024 ** 2, 1),
             "temperature": 0
         }]
 

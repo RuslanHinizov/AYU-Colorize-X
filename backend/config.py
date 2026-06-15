@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     PISASR_UPSCALE: int = 4
     PISASR_TIMEOUT_SECONDS: int = 900
 
+    # AI models directory — override for worktree/Docker deployments
+    AI_MODELS_DIR: str = ""
+
     # Admin credentials (for init_db.py)
     ADMIN_EMAIL: str = ""
     ADMIN_PASSWORD: str = ""
@@ -63,6 +66,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()
 

@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth, API_URL } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Upload, ArrowLeft, Download, Zap, Scissors, Sparkles, Check,
-    Maximize2, Minimize2,
+    Upload, Download, Zap, Scissors, Sparkles, Check,
+    Maximize2, Minimize2, Layout, SplitSquareHorizontal,
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import DownloadButton from '../components/DownloadButton';
 import { createPortal } from 'react-dom';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { useJobProcessing } from '../hooks/useJobProcessing';
@@ -26,8 +28,19 @@ const BG_OPTIONS = (t) => [
     { id: 'transparent', labelKey: 'bgRemove.transparentBg', color: null,      preview: 'checkerboard' },
     { id: 'white',       labelKey: 'bgRemove.whiteBg',       color: '#ffffff', preview: '#ffffff'       },
     { id: 'black',       labelKey: 'bgRemove.blackBg',       color: '#000000', preview: '#000000'       },
-    { id: 'color',       labelKey: 'bgRemove.solidColor',    color: null,      preview: 'picker'        },
+    { id: 'color',       labelKey: 'bgRemove.solidColor',    color: null,      preview: 'custom'        },
 ];
+
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
+}
+
+function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+}
 
 export default function BGRemovePage() {
     const { refreshUser } = useAuth();
@@ -37,13 +50,22 @@ export default function BGRemovePage() {
     const {
         setSelectedFile, preview, setPreview, result, setResult, setJobId,
         isProcessing, error, setError, progress, isFullscreen, setIsFullscreen,
-        resetState,
+        viewMode, setViewMode, resetState,
     } = useEditorStore();
 
     const [bgType, setBgType]     = useState('transparent');
     const [bgColor, setBgColor]   = useState('#4f46e5');
+    const [rgb, setRgb]           = useState(() => hexToRgb('#4f46e5'));
 
-    const { processJob: handleProcess, downloadJob: handleDownload } = useJobProcessing({
+    const updateRgbChannel = useCallback((channel, value) => {
+        const clamped = Math.max(0, Math.min(255, Number(value) || 0));
+        const next = { ...rgb, [channel]: clamped };
+        setRgb(next);
+        setBgColor(rgbToHex(next.r, next.g, next.b));
+        setBgType('color');
+    }, [rgb]);
+
+    const { processJob: handleProcess, downloadJob: handleDownload, jobId } = useJobProcessing({
         jobType: 'BG_REMOVE',
         getParams: () => ({
             bg_type:  bgType,
@@ -82,19 +104,14 @@ export default function BGRemovePage() {
             </div>
 
             <div className="relative z-10 p-6 lg:p-8">
-                {/* Header */}
-                <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-                    <button onClick={() => navigate('/')} className="group flex items-center gap-3 text-muted hover:text-foreground transition-all">
-                        <div className="w-10 h-10 rounded-xl bg-surface-elevated/50 backdrop-blur-sm border border-white/5 flex items-center justify-center group-hover:border-secondary/30 group-hover:bg-secondary/10 transition-all">
-                            <ArrowLeft className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">{t('nav.home')}</span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                        <Scissors className="w-5 h-5 text-secondary" />
-                        <span className="font-display text-lg">{t('bgRemove.title')}</span>
-                    </div>
-                </motion.div>
+                <PageHeader
+                    icon={<Scissors className="w-6 h-6 text-success" />}
+                    title={t('bgRemove.title')}
+                    subtitle={t('bgRemove.aiSubtitle')}
+                    badge="AI"
+                    gradient="success"
+                    backLabel={t('nav.home')}
+                />
 
                 <div className="grid lg:grid-cols-12 gap-6 lg:gap-8">
                     {/* Sidebar */}
@@ -138,19 +155,11 @@ export default function BGRemovePage() {
                                                 : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
                                         }`}
                                     >
-                                        {/* Color swatch */}
                                         {opt.preview === 'checkerboard' ? (
                                             <div className="w-7 h-7 rounded-lg border border-white/20 flex-shrink-0"
                                                 style={{ background: 'repeating-conic-gradient(#555 0% 25%, #333 0% 50%) 0 0 / 12px 12px' }} />
-                                        ) : opt.preview === 'picker' ? (
-                                            <input
-                                                type="color"
-                                                value={bgColor}
-                                                onChange={(e) => { setBgColor(e.target.value); setBgType('color'); }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="w-7 h-7 rounded-lg border-0 cursor-pointer p-0 flex-shrink-0"
-                                                style={{ background: 'none' }}
-                                            />
+                                        ) : opt.preview === 'custom' ? (
+                                            <div className="w-7 h-7 rounded-lg border border-white/20 flex-shrink-0 shadow-inner" style={{ backgroundColor: bgColor }} />
                                         ) : (
                                             <div className="w-7 h-7 rounded-lg border border-white/20 flex-shrink-0" style={{ backgroundColor: opt.color }} />
                                         )}
@@ -161,6 +170,83 @@ export default function BGRemovePage() {
                                     </button>
                                 ))}
                             </div>
+
+                            {/* RGB panel — sadece Özel Renk seçildiğinde */}
+                            <AnimatePresence>
+                                {bgType === 'color' && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="mt-3 p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+                                            {/* Renk önizleme + hex */}
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl border border-white/20 shadow-lg flex-shrink-0" style={{ backgroundColor: bgColor }} />
+                                                <div className="flex-1">
+                                                    <p className="text-[10px] text-muted/60 font-mono uppercase tracking-wider mb-1">HEX</p>
+                                                    <input
+                                                        type="text"
+                                                        value={bgColor}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                                                                setBgColor(val);
+                                                                setRgb(hexToRgb(val));
+                                                            } else {
+                                                                setBgColor(val);
+                                                            }
+                                                        }}
+                                                        maxLength={7}
+                                                        className="w-full bg-transparent text-sm font-mono text-foreground border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:border-accent/40"
+                                                        placeholder="#4f46e5"
+                                                    />
+                                                </div>
+                                                {/* Sistem renk seçici */}
+                                                <label className="cursor-pointer">
+                                                    <div className="w-8 h-8 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all" title="Renk seç">
+                                                        <svg className="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+                                                            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                                                        </svg>
+                                                    </div>
+                                                    <input type="color" value={bgColor}
+                                                        onChange={(e) => { setBgColor(e.target.value); setRgb(hexToRgb(e.target.value)); }}
+                                                        className="sr-only"
+                                                    />
+                                                </label>
+                                            </div>
+
+                                            {/* R G B inputs */}
+                                            {[
+                                                { ch: 'r', label: 'R', color: 'rgb(239,68,68)' },
+                                                { ch: 'g', label: 'G', color: 'rgb(34,197,94)' },
+                                                { ch: 'b', label: 'B', color: 'rgb(99,102,241)' },
+                                            ].map(({ ch, label, color }) => (
+                                                <div key={ch} className="flex items-center gap-2">
+                                                    <span className="text-xs font-mono font-bold w-4 flex-shrink-0" style={{ color }}>{label}</span>
+                                                    <input
+                                                        type="range"
+                                                        min={0} max={255}
+                                                        value={rgb[ch]}
+                                                        onChange={(e) => updateRgbChannel(ch, e.target.value)}
+                                                        className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
+                                                        style={{ accentColor: color }}
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        min={0} max={255}
+                                                        value={rgb[ch]}
+                                                        onChange={(e) => updateRgbChannel(ch, e.target.value)}
+                                                        className="w-12 bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-xs font-mono text-center focus:outline-none focus:border-accent/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         <AnimatePresence>
@@ -210,15 +296,25 @@ export default function BGRemovePage() {
                                     <FullscreenPortal isFullscreen={isFullscreen}>
                                         <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black/30 backdrop-blur-sm flex items-center justify-center ${isFullscreen ? 'h-full rounded-none' : 'mb-4'}`}>
                                             {result && (
-                                                <button onClick={() => setIsFullscreen(!isFullscreen)} className="absolute top-4 right-4 z-20 p-2.5 rounded-lg bg-black/60 text-muted hover:text-white hover:bg-white/10 transition-all">
-                                                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                                                </button>
+                                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="absolute top-4 right-4 z-20 flex gap-1 bg-black/60 backdrop-blur-xl p-1.5 rounded-xl border border-white/10 shadow-xl">
+                                                    <button onClick={() => setViewMode('side-by-side')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'side-by-side' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><Layout className="w-4 h-4" /></button>
+                                                    <button onClick={() => setViewMode('slider')} className={`p-2.5 rounded-lg transition-all ${viewMode === 'slider' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:text-white hover:bg-white/10'}`}><SplitSquareHorizontal className="w-4 h-4" /></button>
+                                                    <div className="w-px bg-white/10 mx-1" />
+                                                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2.5 rounded-lg text-muted hover:text-white hover:bg-white/10 transition-all">{isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</button>
+                                                </motion.div>
                                             )}
 
                                             {result ? (
-                                                <div className="absolute inset-0 w-full h-full">
-                                                    <BeforeAfterSlider original={preview} modified={result} />
-                                                </div>
+                                                viewMode === 'slider' ? (
+                                                    <div className="absolute inset-0 w-full h-full">
+                                                        <BeforeAfterSlider original={preview} modified={result} avoidTopRightControls />
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-2 gap-3 w-full p-3 items-center h-full overflow-auto">
+                                                        <div className="relative"><span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.original')}</span><img src={preview} alt="Original" className="w-full h-auto rounded-xl shadow-2xl" /></div>
+                                                        <div className="relative"><span className="absolute top-3 left-3 bg-gradient-to-r from-primary to-accent px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.colorized')}</span><img src={result} alt="Result" className="w-full h-auto rounded-xl shadow-2xl ring-2 ring-accent/20" /></div>
+                                                    </div>
+                                                )
                                             ) : (
                                                 <img src={preview} alt="Preview" className="max-h-full w-full object-contain opacity-60" />
                                             )}
@@ -258,10 +354,7 @@ export default function BGRemovePage() {
                                                     {t('bgRemove.removeBtn')}
                                                 </button>
                                             ) : (
-                                                <button onClick={handleDownload} className="btn-primary flex-[2] flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, rgb(34,197,94), rgb(16,185,129))' }}>
-                                                    <Download className="w-4 h-4" />
-                                                    {t('editor.downloadResult')}
-                                                </button>
+                                                <div className="flex-[2]"><DownloadButton jobId={jobId} filename={`bg_removed_${jobId}`} /></div>
                                             )}
                                         </div>
                                     )}

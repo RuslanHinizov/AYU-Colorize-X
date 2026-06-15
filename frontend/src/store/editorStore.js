@@ -14,7 +14,7 @@ export const useEditorStore = create((set) => ({
     renderFactor: 35,
     viewMode: 'slider',
     isFullscreen: false,
-    upscaleScale: 2,
+    upscaleScale: 4,
     colorPreset: 'none',
 
     // Actions

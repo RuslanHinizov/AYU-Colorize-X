@@ -174,7 +174,7 @@ export default function RestorePage() {
                                             )}
 
                                             {result ? (
-                                                viewMode === 'slider' ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} /></div> : (
+                                                viewMode === 'slider' ? <div className="absolute inset-0 w-full h-full"><BeforeAfterSlider original={preview} modified={result} avoidTopRightControls /></div> : (
                                                     <div className="grid grid-cols-2 gap-3 w-full p-3 items-center h-full overflow-auto">
                                                         <div className="relative"><span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs text-white z-10">{t('editor.original')}</span><img src={preview} alt="Original" className="w-full h-auto rounded-xl shadow-2xl" /></div>
                                                         <div className="relative"><span className="absolute top-3 left-3 bg-gradient-to-r from-accent to-primary px-3 py-1.5 rounded-lg text-xs text-white z-10">Restore</span><img src={result} alt="Restored" className="w-full h-auto rounded-xl shadow-2xl ring-2 ring-accent/20" /></div>

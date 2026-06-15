@@ -130,14 +130,18 @@ async def upload_file(
 async def create_job(
     type: str,
     file: UploadFile = File(...),
+    mask: Optional[UploadFile] = File(None),
     render_factor: int = 35,
     model: str = "artistic",
     device: str = "cpu",
     enhance_mode: str = "auto",
-    scale: int = 2,
+    scale: int = 4,
     color_preset: str = "none",
     bg_type: str = "transparent",
     bg_color: Optional[str] = None,
+    deblur_mode: str = "both",
+    deblur_strength: float = 1.0,
+    output_format: str = "jpg",
 
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -158,20 +162,31 @@ async def create_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="enhance_mode must be 'auto', 'restore', 'upscale', or 'restore_upscale'",
         )
-    if scale not in (2, 4, 8):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="scale must be 2, 4, or 8")
+    if scale not in (4, 8, 16):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="scale must be 4, 8, or 16")
     color_preset = (color_preset or "none").strip().lower()
     if color_preset not in ("none", "warm", "cold", "vintage", "vivid"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="color_preset must be none/warm/cold/vintage/vivid")
     bg_type = (bg_type or "transparent").strip().lower()
     if bg_type not in ("transparent", "white", "black", "color"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bg_type must be transparent/white/black/color")
+    deblur_mode = (deblur_mode or "both").strip().lower()
+    if deblur_mode not in ("deblur", "denoise", "both"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="deblur_mode must be deblur/denoise/both")
+    deblur_strength = max(0.3, min(3.0, deblur_strength))
+    output_format = (output_format or "jpg").strip().lower()
+    if output_format not in ("jpg", "jpeg", "png", "webp", "tiff"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="output_format must be jpg/png/webp/tiff")
 
     # Parse job type
     try:
         job_type = JobType(type)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid job type: {type}")
+
+    # INPAINT requires a mask — validate early before touching the DB
+    if job_type == JobType.INPAINT and mask is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INPAINT requires a mask file")
 
     # Check concurrent jobs limit
     from sqlalchemy import func
@@ -249,6 +264,17 @@ async def create_job(
         # Save uploaded file
         input_path = await save_upload_file(file)
         output_path = get_output_path(input_path, job_type.value)
+
+        # Save mask for inpainting
+        mask_path = None
+        if job_type == JobType.INPAINT:
+            if mask is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INPAINT requires a mask file")
+            mask_path = input_path.replace(".jpg", "_mask.png").replace(".jpeg", "_mask.png").replace(".png", "_mask.png").replace(".webp", "_mask.png")
+            mask_path = os.path.splitext(input_path)[0] + "_mask.png"
+            mask_content = await mask.read()
+            with open(mask_path, "wb") as mf:
+                mf.write(mask_content)
         
         # Create job record
         new_job = Job(
@@ -305,6 +331,9 @@ async def create_job(
                     color_preset=color_preset,
                     bg_type=bg_type,
                     bg_color=bg_color,
+                    mask_path=mask_path,
+                    deblur_mode=deblur_mode,
+                    deblur_strength=deblur_strength,
                 )
 
             # Update status to processing
@@ -322,7 +351,9 @@ async def create_job(
                 process_job_inline(
                     job_id, user_id, job_type, input_path, output_path,
                     render_factor, model, device, apply_watermark, resize_input,
-                    enhance_mode, scale, color_preset, bg_type, bg_color
+                    enhance_mode, scale, color_preset, bg_type, bg_color,
+                    mask_path=mask_path, deblur_mode=deblur_mode,
+                    deblur_strength=deblur_strength,
                 )
             )
 
@@ -330,6 +361,9 @@ async def create_job(
         await db.refresh(new_job)
         return job_to_response(new_job)
         
+    except HTTPException:
+        await db.rollback()
+        raise
     except ValueError as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -418,22 +452,51 @@ async def get_job(
 @router.get("/{job_id}/download")
 async def download_result(
     job_id: str,
+    format: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Download processed image"""
+    """Download processed image. Optional ?format=jpg|png|webp|tiff for format conversion."""
     job = await _get_job_or_404(job_id, current_user.id, db)
 
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job not completed yet")
-    
+
     if not job.output_path or not os.path.exists(job.output_path):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output file not found")
-    
+
+    # Format conversion
+    if format and format.lower() in ("png", "webp", "tiff", "jpg", "jpeg"):
+        fmt = format.lower().replace("jpeg", "jpg")
+        orig_ext = os.path.splitext(job.output_path)[1].lower().replace(".jpeg", ".jpg")
+        target_ext = f".{fmt}"
+        if orig_ext != target_ext:
+            try:
+                from PIL import Image as PILImage
+                import tempfile
+                pil_fmt_map = {"jpg": "JPEG", "png": "PNG", "webp": "WEBP", "tiff": "TIFF"}
+                pil_fmt = pil_fmt_map[fmt]
+                tmp = tempfile.NamedTemporaryFile(suffix=target_ext, delete=False)
+                tmp.close()
+                with PILImage.open(job.output_path) as img:
+                    if pil_fmt == "JPEG" and img.mode in ("RGBA", "LA", "P"):
+                        img = img.convert("RGB")
+                    save_kwargs = {"quality": 95} if pil_fmt in ("JPEG", "WEBP") else {}
+                    img.save(tmp.name, pil_fmt, **save_kwargs)
+                mime_map = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "tiff": "image/tiff"}
+                return FileResponse(
+                    tmp.name,
+                    media_type=mime_map[fmt],
+                    filename=f"processed_{job_id}{target_ext}",
+                    headers={"X-Format-Converted": "1"}
+                )
+            except Exception as e:
+                logger.warning(f"Format conversion failed: {e}, serving original")
+
     media_type = mimetypes.guess_type(job.output_path)[0] or "application/octet-stream"
     ext = os.path.splitext(job.output_path)[1] or (".mp4" if job.type == JobType.VIDEO_COLORIZE else ".jpg")
     filename = f"processed_{job_id}{ext}"
-        
+
     return FileResponse(job.output_path, media_type=media_type, filename=filename)
 
 
@@ -476,6 +539,28 @@ async def delete_job(
     await db.delete(job)
     await db.commit()
     return None
+
+
+@router.post("/{job_id}/cancel")
+async def cancel_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel a pending or processing job."""
+    from routers.websocket import notify_job_failed
+    job = await _get_job_or_404(job_id, current_user.id, db)
+    if job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job is not cancellable")
+    job.status = JobStatus.FAILED
+    job.error_message = "Kullanici tarafindan iptal edildi"
+    job.progress = 0
+    await db.commit()
+    try:
+        await notify_job_failed(str(current_user.id), job_id, "Kullanici tarafindan iptal edildi")
+    except Exception:
+        pass
+    return {"cancelled": True}
 
 
 @router.post("/{job_id}/favorite")
@@ -527,10 +612,13 @@ async def process_job_inline(
     watermark: bool,
     resize: bool,
     enhance_mode: str = "auto",
-    scale: int = 2,
+    scale: int = 4,
     color_preset: str = "none",
     bg_type: str = "transparent",
     bg_color: str = None,
+    mask_path: str = None,
+    deblur_mode: str = "both",
+    deblur_strength: float = 1.0,
 ):
     """
     Background job processing fallback when Celery is not available.
@@ -539,6 +627,9 @@ async def process_job_inline(
     """
     from services.ai_engine import colorize_image, colorize_video, restore_image, upscale_image
     from services.bg_service import remove_background
+    from services.deblur_service import deblur_image
+    from services.damage_restore_service import restore_damaged_photo
+    from services.inpaint_service import inpaint_image
     from routers.websocket import notify_job_progress, notify_job_completed, notify_job_failed
     from database import SessionLocal
     from sqlalchemy import update
@@ -604,36 +695,52 @@ async def process_job_inline(
                     input_path, output_path, bg_type, bg_color,
                     progress_callback
                 )
+            elif job_type == JobType.DEBLUR:
+                processing_time = await asyncio.to_thread(
+                    deblur_image,
+                    input_path, output_path, deblur_mode, deblur_strength,
+                    progress_callback
+                )
+            elif job_type == JobType.RESTORE_DAMAGE:
+                processing_time = await asyncio.to_thread(
+                    restore_damaged_photo,
+                    input_path, output_path,
+                    progress_callback
+                )
+            elif job_type == JobType.INPAINT:
+                if not mask_path or not os.path.exists(mask_path):
+                    raise ValueError("Mask file missing for INPAINT job")
+                processing_time = await asyncio.to_thread(
+                    inpaint_image,
+                    input_path, mask_path, output_path,
+                    progress_callback
+                )
             else:
                 raise ValueError(f"Unknown job type: {job_type}")
 
-            # Update as completed
-            await session.execute(
-                update(Job).where(Job.id == job_id).values(
-                    status=JobStatus.COMPLETED,
-                    processing_time=processing_time,
-                    progress=100
-                )
+            # Only mark COMPLETED if not already cancelled
+            result = await session.execute(
+                update(Job)
+                .where(and_(Job.id == job_id, Job.status == JobStatus.PROCESSING))
+                .values(status=JobStatus.COMPLETED, processing_time=processing_time, progress=100)
             )
             await session.commit()
-
-            # Notify completion via WebSocket
-            await notify_job_completed(user_id, job_id, output_path, processing_time)
-            logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
+            if result.rowcount:
+                await notify_job_completed(user_id, job_id, output_path, processing_time)
+                logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
+            else:
+                logger.info(f"Job {job_id} was cancelled before completion — skipping COMPLETED update")
 
         except Exception as e:
             logger.exception(f"Job processing failed: {e}")
-            await session.execute(
-                update(Job).where(Job.id == job_id).values(
-                    status=JobStatus.FAILED,
-                    error_message=str(e),
-                    progress=0
-                )
+            result = await session.execute(
+                update(Job)
+                .where(and_(Job.id == job_id, Job.status == JobStatus.PROCESSING))
+                .values(status=JobStatus.FAILED, error_message=str(e), progress=0)
             )
             await session.commit()
-
-            # Notify failure via WebSocket
-            await notify_job_failed(user_id, job_id, str(e))
+            if result.rowcount:
+                await notify_job_failed(user_id, job_id, str(e))
 
 
 

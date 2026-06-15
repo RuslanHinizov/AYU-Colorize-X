@@ -9,6 +9,9 @@ class JobType(str, enum.Enum):
     RESTORE = "RESTORE"
     UPSCALE = "UPSCALE"
     BG_REMOVE = "BG_REMOVE"
+    DEBLUR = "DEBLUR"
+    RESTORE_DAMAGE = "RESTORE_DAMAGE"
+    INPAINT = "INPAINT"
 
 class JobStatus(str, enum.Enum):
     PENDING = "PENDING"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle, CreditCard, Shield, Sparkles, X } from 'lucide-react';
 import axios from '../lib/axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLanguage } from '../context/LanguageContext';
 
 let stripePromise;
 
@@ -21,6 +22,7 @@ function loadStripeJs() {
 }
 
 export default function PaymentModal({ plan, onClose, onSuccess }) {
+    const { t } = useLanguage();
     const [isLoading, setIsLoading] = useState(false);
     const [step, setStep] = useState('confirm');
     const [error, setError] = useState('');
@@ -61,7 +63,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 cardRef.current.on('ready', () => setCardReady(true));
                 cardRef.current.on('change', (event) => setError(event.error?.message || ''));
             } catch (err) {
-                setError(err.message || 'Stripe baslatilamadi.');
+                setError(err.message || t('settings.paymentFailed'));
             }
         }
 
@@ -105,7 +107,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
             setTimeout(() => { onSuccess(); }, 1500);
         } catch (err) {
             console.error(err);
-            setError(err.response?.data?.detail || err.message || 'Odeme basarisiz. Lutfen tekrar deneyin.');
+            setError(err.response?.data?.detail || err.message || t('settings.paymentFailed'));
             setIsLoading(false);
         }
     };

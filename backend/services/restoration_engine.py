@@ -205,6 +205,18 @@ def restore_photo(
     h, w_img = img.shape[:2]
     logger.info(f"Input: {w_img}x{h}")
 
+    # Dev taramalari kucult: CodeFormer yuzu 512px'te restore eder; 15MP bir
+    # taramada yuz ~1500px oldugundan restore edilen 512'lik sonuc geri
+    # yapistirilirken gerilip gorunmez olur. Uzun kenari sinirlamak yuzu
+    # ~512 olcegine getirir ve iyilestirme birebir gorunur kalir.
+    max_dim = int(os.environ.get("RESTORE_MAX_DIM", "1600"))
+    if max(h, w_img) > max_dim:
+        scale_f = max_dim / max(h, w_img)
+        img = cv2.resize(img, (int(w_img * scale_f), int(h * scale_f)),
+                         interpolation=cv2.INTER_AREA)
+        h, w_img = img.shape[:2]
+        logger.info(f"Buyuk girdi kucultuldu -> {w_img}x{h} (RESTORE_MAX_DIM={max_dim})")
+
     if progress_callback:
         progress_callback(10)
 
