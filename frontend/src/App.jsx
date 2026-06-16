@@ -208,7 +208,7 @@ function AdminRoute({ children }) {
 function App() {
   return (
     <ErrorBoundary>
-    <BrowserRouter>
+    <BrowserRouter basename="/AYU-Colorize-X">
       <LanguageProvider>
         <ThemeProvider>
           <AuthProvider>
