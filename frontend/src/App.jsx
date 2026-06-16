@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { HashRouter, BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Component, useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
@@ -208,7 +208,7 @@ function AdminRoute({ children }) {
 function App() {
   return (
     <ErrorBoundary>
-    <BrowserRouter basename="/AYU-Colorize-X">
+    <HashRouter>
       <LanguageProvider>
         <ThemeProvider>
           <AuthProvider>
@@ -362,7 +362,7 @@ function App() {
           </AuthProvider>
         </ThemeProvider>
       </LanguageProvider>
-    </BrowserRouter>
+    </HashRouter>
     </ErrorBoundary>
   );
 }
