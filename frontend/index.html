@@ -11,6 +11,23 @@
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#08080C" />
     <title>AYU ColorizeX</title>
+    <script>
+      (function(l) {
+        if (l.search[1] === 'p') {
+          var params = l.search.slice(1).split('&').reduce(function(p, s) {
+            var r = s.split('=');
+            p[r[0]] = r.slice(1).join('=').replace(/~and~/g, '&');
+            return p;
+          }, {});
+          if (params.p !== undefined) {
+            window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + (params.p || '') +
+              (params.q ? '?' + params.q : '') + l.hash
+            );
+          }
+        }
+      }(window.location));
+    </script>
   </head>
   <body>
     <div id="root"></div>
