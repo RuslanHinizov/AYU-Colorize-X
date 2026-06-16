@@ -1,4 +1,6 @@
 import { HashRouter, BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+
+const Router = import.meta.env.BASE_URL === '/AYU-Colorize-X/' ? HashRouter : BrowserRouter;
 import { Component, useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
@@ -208,7 +210,7 @@ function AdminRoute({ children }) {
 function App() {
   return (
     <ErrorBoundary>
-    <HashRouter>
+    <Router>
       <LanguageProvider>
         <ThemeProvider>
           <AuthProvider>
@@ -362,7 +364,7 @@ function App() {
           </AuthProvider>
         </ThemeProvider>
       </LanguageProvider>
-    </HashRouter>
+    </Router>
     </ErrorBoundary>
   );
 }
