@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+
+const B = import.meta.env.BASE_URL; // '/AYU-Colorize-X/' on GitHub Pages, '/' locally
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 import {
   Play, Pause, ArrowRight, Zap, Brain, ChevronLeft,
@@ -210,7 +212,7 @@ export default function Presentation() {
         <video
           autoPlay muted loop playsInline
           className="absolute inset-0 w-full h-full object-cover opacity-40"
-          src="/demo/video/d055a877-801c-4f2a-a9f2-5b2103260f44_video_colorize.mp4"
+          src={`${B}demo/video/d055a877-801c-4f2a-a9f2-5b2103260f44_video_colorize.mp4`}
         />
         {/* Dark gradient overlay — keeps text readable */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#03071E]/70 via-[#03071E]/50 to-[#03071E]/90" />
@@ -230,7 +232,7 @@ export default function Presentation() {
             className="flex justify-center mb-10"
           >
             <img
-              src="/LogoAndProFoto/ayu_logo.png"
+              src={`${B}LogoAndProFoto/ayu_logo.png`}
               alt="AYU ColorizeX"
               className="h-32 object-contain drop-shadow-2xl"
             />
@@ -557,8 +559,8 @@ export default function Presentation() {
             >
               <div className="h-[560px] rounded-2xl overflow-hidden shadow-xl shadow-gray-200/80 mb-4 bg-gray-950">
                 <BeforeAfter
-                  before="/demo/photo/processed_3b430fe0-d1e9-4ddf-b86a-6ed0667c3783.jpg"
-                  after="/demo/photo/colorized_fe2610fb-422f-4062-b7fe-132d1da2dad0.jpg"
+                  before={`${B}demo/photo/processed_3b430fe0-d1e9-4ddf-b86a-6ed0667c3783.jpg`}
+                  after={`${B}demo/photo/colorized_fe2610fb-422f-4062-b7fe-132d1da2dad0.jpg`}
                 />
               </div>
               <div className="flex justify-center">
@@ -575,8 +577,8 @@ export default function Presentation() {
             >
               <div className="h-[560px] rounded-2xl overflow-hidden shadow-xl shadow-gray-200/80 mb-4 bg-gray-950">
                 <BeforeAfter
-                  before="/demo/photo/face_with_piece_missing1.jpg"
-                  after="/demo/photo/repaired_450f37dd-6ad7-4b72-b1cb-f9fd49c6ce6a.jpg"
+                  before={`${B}demo/photo/face_with_piece_missing1.jpg`}
+                  after={`${B}demo/photo/repaired_450f37dd-6ad7-4b72-b1cb-f9fd49c6ce6a.jpg`}
                 />
               </div>
               <div className="flex justify-center">
@@ -593,8 +595,8 @@ export default function Presentation() {
             >
               <div className="h-[560px] rounded-2xl overflow-hidden shadow-xl shadow-gray-200/80 mb-4 bg-gray-950">
                 <BeforeAfter
-                  before="/demo/photo/a-young-woman-with-striking-features-is-focused-while-sitting-at-a-desk-in-a-bright-office-photo.jpg"
-                  after="/demo/photo/enhanced_471ca445-edaa-42ef-b2a5-abaf8709709b.jpg"
+                  before={`${B}demo/photo/a-young-woman-with-striking-features-is-focused-while-sitting-at-a-desk-in-a-bright-office-photo.jpg`}
+                  after={`${B}demo/photo/enhanced_471ca445-edaa-42ef-b2a5-abaf8709709b.jpg`}
                 />
               </div>
               <div className="flex justify-center">
@@ -611,8 +613,8 @@ export default function Presentation() {
             >
               <div className="h-[560px] rounded-2xl overflow-hidden shadow-xl shadow-gray-200/80 mb-4 bg-gray-950">
                 <BeforeAfter
-                  before="/demo/photo/how-to-convert-low-to-high-resolution-in-photoshop-10.jpg"
-                  after="/demo/photo/bg_removed_7896ab86-d556-450d-bbbd-57e6cbdb8c45.jpg"
+                  before={`${B}demo/photo/how-to-convert-low-to-high-resolution-in-photoshop-10.jpg`}
+                  after={`${B}demo/photo/bg_removed_7896ab86-d556-450d-bbbd-57e6cbdb8c45.jpg`}
                 />
               </div>
               <div className="flex justify-center">
@@ -670,14 +672,14 @@ export default function Presentation() {
                   <span className="absolute top-3 left-3 z-10 px-2.5 py-1 bg-black/80 backdrop-blur-sm rounded-lg text-white text-[11px] font-bold uppercase tracking-wide">
                     Бұрын — Қара-ақ
                   </span>
-                  <video ref={v1bRef} src="/demo/video/7198924-hd_720_1280_25fps.mp4"
+                  <video ref={v1bRef} src={`${B}demo/video/7198924-hd_720_1280_25fps.mp4`}
                     className="w-full h-72 object-contain" muted loop playsInline preload="metadata" />
                 </div>
                 <div className="relative bg-black border-l border-white/8">
                   <span className="absolute top-3 left-3 z-10 px-2.5 py-1 bg-emerald-600/90 backdrop-blur-sm rounded-lg text-white text-[11px] font-bold uppercase tracking-wide">
                     Кейін — DeOldify AI
                   </span>
-                  <video ref={v1aRef} src="/demo/video/colorized_714e4234-19d6-4210-afa9-a1d0d60a38d2.mp4"
+                  <video ref={v1aRef} src={`${B}demo/video/colorized_714e4234-19d6-4210-afa9-a1d0d60a38d2.mp4`}
                     className="w-full h-72 object-contain" muted loop playsInline preload="metadata" />
                 </div>
               </div>
@@ -700,14 +702,14 @@ export default function Presentation() {
                   <span className="absolute top-3 left-3 z-10 px-2.5 py-1 bg-black/80 backdrop-blur-sm rounded-lg text-white text-[11px] font-bold uppercase tracking-wide">
                     Бұрын — Бастапқы
                   </span>
-                  <video ref={v2bRef} src="/demo/video/15031830_2560_1440_30fps.mp4"
+                  <video ref={v2bRef} src={`${B}demo/video/15031830_2560_1440_30fps.mp4`}
                     className="w-full h-72 object-contain" muted loop playsInline preload="metadata" />
                 </div>
                 <div className="relative bg-black border-l border-white/8">
                   <span className="absolute top-3 left-3 z-10 px-2.5 py-1 bg-blue-600/90 backdrop-blur-sm rounded-lg text-white text-[11px] font-bold uppercase tracking-wide">
                     Кейін — AI өңделген
                   </span>
-                  <video ref={v2aRef} src="/demo/video/processed_fa900d30-6bcc-43cf-89fa-56ae23fbe1ef.mp4"
+                  <video ref={v2aRef} src={`${B}demo/video/processed_fa900d30-6bcc-43cf-89fa-56ae23fbe1ef.mp4`}
                     className="w-full h-72 object-contain" muted loop playsInline preload="metadata" />
                 </div>
               </div>
@@ -873,7 +875,7 @@ export default function Presentation() {
               transition={{ duration: 6, repeat: Infinity }}
               className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-600 to-violet-600 mb-10 shadow-2xl shadow-blue-600/40"
             >
-              <img src="/LogoAndProFoto/ayu_logo.png" alt="AYU" className="w-16 h-16 object-contain" />
+              <img src={`${B}LogoAndProFoto/ayu_logo.png`} alt="AYU" className="w-16 h-16 object-contain" />
             </motion.div>
 
             <h2 className="font-black leading-none tracking-tight mb-6">
